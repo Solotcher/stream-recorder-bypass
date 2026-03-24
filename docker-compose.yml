@@ -10,9 +10,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      # 설정 파일(.env) 영속성 보장
-      - ./.env:/app/.env
-      # 로컬 DB 및 설정 파일 영속성 보장
+      # 로컬 DB 및 설정 파일 영속성 보장 (.env는 data/ 내부로 통합됨)
       - ./data:/app/data
       # 다운로드되는 녹화본이 저장될 로컬 디렉토리
       - ./output:/app/output
@@ -42,7 +40,6 @@ services:
     restart: unless-stopped
     command: ["celery", "-A", "app.worker.celery_app.celery_app", "worker", "--loglevel=info", "--pool=threads", "--concurrency=4"]
     volumes:
-      - ./.env:/app/.env
       - ./data:/app/data
       - ./output:/app/output
       - ./bin:/app/bin

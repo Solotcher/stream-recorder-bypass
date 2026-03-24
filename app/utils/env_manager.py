@@ -7,7 +7,7 @@ def update_env_file(updates: Dict[str, str]):
     주어진 딕셔너리를 기반으로 .env 파일을 업데이트합니다.
     기존 주석이나 다른 라인들은 최대한 보존합니다.
     """
-    env_path = os.path.join(settings.BASE_DIR, ".env")
+    env_path = os.path.join(settings.DATA_DIR, ".env")
     
     # 기존 내용 읽기
     lines = []

@@ -175,7 +175,8 @@ export async function submitManualRecord() {
         if (startRes.ok) {
             showToast('녹화 시작을 요청했습니다. 현황을 확인하세요.', 'success');
             document.getElementById('manual_url_input').value = '';
-            switchView('active');
+            fetchActiveJobs();
+            switchView('dashboard');
         } else {
             let errorMsg = '녹화 명령 실패. 오프라인이거나 이미 녹화 중일 수 있습니다.';
             try {

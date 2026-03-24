@@ -24,7 +24,13 @@ function bindEvents() {
     document.addEventListener('click', (e) => {
         // 1. 사이드바 네비게이션
         const navItem = e.target.closest('.nav-item[data-view]');
-        if (navItem) return switchView(navItem.dataset.view);
+        if (navItem) {
+            // 변경된 통합 대시보드 강제 렌더링 호출
+            if (navItem.dataset.view === 'dashboard') {
+                fetchActiveJobs();
+            }
+            return switchView(navItem.dataset.view);
+        }
 
         // 2. 모달 열기/닫기
         if (e.target.closest('#btn_open_config')) return openConfigModalWithData();

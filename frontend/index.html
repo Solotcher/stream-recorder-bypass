@@ -18,13 +18,9 @@
                 <h2>StreamRecorder</h2>
             </div>
             <ul class="nav-menu">
-                <li class="nav-item active" data-view="active">
-                    <span class="nav-icon">⚡</span>
-                    <span>현재 녹화 현황</span>
-                </li>
-                <li class="nav-item" data-view="manual">
-                    <span class="nav-icon">▶</span>
-                    <span>수동 즉시 녹화</span>
+                <li class="nav-item active" data-view="dashboard">
+                    <span class="nav-icon">📊</span>
+                    <span>상태 대시보드 (수동시작)</span>
                 </li>
                 <li class="nav-item" data-view="scheduled">
                     <span class="nav-icon">📅</span>
@@ -37,19 +33,19 @@
         </nav>
 
         <!-- Main Content Area -->
-        <main class="main-content">
-            <!-- View 1: Manual Record (수동 즉시 녹화) -->
-            <div id="view-manual" class="view-content">
+            <!-- View 1: Unified Dashboard (대시보드: 수동시작 + 현재상태) -->
+            <div id="view-dashboard" class="view-content active">
                 <header class="view-header">
-                    <h1>수동 즉시 녹화</h1>
-                    <p class="subtitle">방송국 URL을 입력하고 즉각적으로 강제 녹화를 시작합니다.</p>
+                    <h1>통합 녹화 대시보드</h1>
+                    <p class="subtitle">방송국 URL을 입력하여 즉각적인 녹화를 시작하거나, 백그라운드 진행 현황을 파악합니다.</p>
                 </header>
 
-                <div class="glass-card">
+                <!-- 수동 즉시 녹화 입력창 블록 -->
+                <div class="glass-card" style="margin-bottom: 20px;">
                     <div class="quick-action-bar"
-                        style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
+                        style="display: flex; gap: 10px; flex-wrap: wrap;">
                         <input type="text" id="manual_url_input"
-                            placeholder="방송 채널 URL (예: https://chzzk.naver.com/live/xxx)"
+                            placeholder="방송 채널 URL 또는 VOD (예: https://youtube.com/watch?v=...)"
                             style="flex: 1; min-width: 300px;">
                         <select id="manual_platform" style="width: 150px;">
                             <option value="auto">자동 탐지</option>
@@ -60,7 +56,31 @@
                             <option value="tiktok">틱톡</option>
                         </select>
                         <input type="password" id="manual_stream_password" placeholder="비밀번호 방인 경우 입력 (선택)" style="flex: 1; min-width: 200px; padding: 0.75rem; border-radius: 6px; background: rgba(1, 4, 9, 0.8); border: 1px solid var(--glass-border); color: var(--text-primary);">
-                        <button id="btn_manual_record" class="btn btn-primary">🔴 지금 녹화 시작</button>
+                        <button id="btn_manual_record" class="btn btn-primary">🔴 강제 시작</button>
+                    </div>
+                </div>
+
+                <!-- 현재 녹화 현황 리스트 블록 -->
+                <div class="glass-card">
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>플랫폼</th>
+                                    <th>채널명</th>
+                                    <th>방송제목</th>
+                                    <th>카테고리</th>
+                                    <th>상태</th>
+                                </tr>
+                            </thead>
+                            <tbody id="activeJobsTbody">
+                                <tr>
+                                    <td colspan="5" style="text-align:center; padding: 20px; color:var(--text-secondary);">
+                                        진행 중인 녹화 작업이 없습니다.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -89,38 +109,6 @@
                             </thead>
                             <tbody id="channelTbody">
                                 <!-- JS Render -->
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <!-- View 3: Active Jobs (현재 진행 상황) -->
-            <div id="view-active" class="view-content active">
-                <header class="view-header">
-                    <h1>현재 녹화 현황</h1>
-                    <p class="subtitle">시스템 내에서 FFmpeg 백그라운드 작업이 돌아가고 있는 라이브 현황입니다.</p>
-                </header>
-
-                <div class="glass-card">
-                    <div class="table-container">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>플랫폼</th>
-                                    <th>채널명</th>
-                                    <th>방송제목</th>
-                                    <th>카테고리</th>
-                                    <th>상태</th>
-                                </tr>
-                            </thead>
-                            <tbody id="activeJobsTbody">
-                                <!-- JS 폴링 (나중에 구현) -->
-                                <tr>
-                                    <td colspan="5"
-                                        style="text-align:center; padding: 20px; color:var(--text-secondary);">
-                                        진행 중인 녹화 작업이 없습니다.</td>
-                                </tr>
                             </tbody>
                         </table>
                     </div>
