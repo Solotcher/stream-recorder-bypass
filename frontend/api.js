@@ -7,6 +7,15 @@ import { showToast, escapeHtml, switchView, closeModal, openModal } from './ui.j
 export function parseChannelUrl(inputStr, fallbackPlatform) {
     let platform = fallbackPlatform;
     let ch_id = inputStr.trim();
+    let is_vod = false;
+
+    // VOD 및 특정 영상 다운로드 전용 우회 (원본 URL 훼손 방지)
+    if (ch_id.includes("youtube.com/watch") || ch_id.includes("youtu.be") || ch_id.includes("youtube.com/shorts") ||
+        (ch_id.includes("sooplive.") && ch_id.split('/').length > 4) || ch_id.includes("afreecatv.com/")) {
+        if (ch_id.includes("youtube")) platform = "youtube";
+        if (ch_id.includes("sooplive") || ch_id.includes("afreecatv")) platform = "soop";
+        return { platform, ch_id, is_vod: true };
+    }
 
     const chzzkMatch = inputStr.match(/(?:chzzk\.naver\.com\/live\/|chzzk\.naver\.com\/)([a-zA-Z0-9]+)/);
     if (chzzkMatch) { platform = 'chzzk'; ch_id = chzzkMatch[1]; }
@@ -23,13 +32,14 @@ export function parseChannelUrl(inputStr, fallbackPlatform) {
     const tiktokMatch = inputStr.match(/tiktok\.com\/@([a-zA-Z0-9_.-]+)/);
     if (tiktokMatch) { platform = 'tiktok'; ch_id = tiktokMatch[1]; }
 
-    if (ch_id.includes('/')) {
+    // http가 없는 순수 ID 모드에서만 슬래시 컷팅 수행
+    if (!ch_id.startsWith('http') && ch_id.includes('/')) {
         ch_id = ch_id.split('/')[0];
     }
 
     if (platform === 'auto') platform = 'chzzk';
 
-    return { platform, ch_id };
+    return { platform, ch_id, is_vod };
 }
 
 export async function fetchChannels() {
@@ -132,9 +142,25 @@ export async function submitManualRecord() {
 
     if (!rawInput) return showToast('방송국 URL 또는 ID를 입력하세요.', 'error');
 
-    const { platform, ch_id } = parseChannelUrl(rawInput, rawPlatform);
+    const { platform, ch_id, is_vod } = parseChannelUrl(rawInput, rawPlatform);
 
     try {
+        // VOD 다운로드 전용 패스 (수동 녹화 라우터 우회)
+        if (is_vod) {
+            const res = await fetch(`${CONFIG.API_BASE}/vod/download`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: rawInput })
+            });
+            if (res.ok) {
+                showToast('📺 VOD 비동기 다운로드를 시작했습니다. (워커 실행 중)', 'success');
+                document.getElementById('manual_url_input').value = '';
+            } else {
+                showToast('VOD 다운로드 명령에 실패했습니다.', 'error');
+            }
+            return;
+        }
+
         const startRes = await fetch(`${CONFIG.API_BASE}/records/manual/start`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

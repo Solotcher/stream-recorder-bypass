@@ -131,23 +131,12 @@ async def trigger_recording(ch_id: str, platform: str, ch_name: str, extractor, 
         cmd.extend(extractor.get_streamlink_args())
         cmd.extend(["-o", output_path, meta.get("stream_url", "")])
     elif platform == "tiktok":
-        # 틱톡: 직접 HTTP 다운로드 (Streamlink 미지원)
-        stream_url = meta.get("stream_url", "")
-        if not stream_url:
-            logger.error(f"[TikTok][{ch_name}] 스트림 URL을 가져올 수 없습니다.")
-            return False
-        # ffmpeg로直接 스트림 다운로드 (.flv/.ts → .mp4 변환 포함)
+        # TikTok FFmpeg 403 버그 회피: yt-dlp를 내부 레코더 모듈로 직접 사용
         cmd = [
-            settings.FFMPEG_PATH,
-            "-y",                          # 덮어쓰기
-            "-nostdin",                    # stdin 비활성화
-            "-headers", f"User-Agent: {settings.USER_AGENT}\r\n",
-            "-i", stream_url,              # TikTok 스트림 URL
-            "-c:v", "copy",                # 비디오 복사 (재인코딩 없이)
-            "-c:a", "copy",                # 오디오 복사
-            "-f", "mp4",                   # MP4 컨테이너로 출력
-            "-movflags", "+faststart",     # 웹 스트리밍 최적화
-            output_path
+            settings.YTDLP_PATH,
+            f"https://www.tiktok.com/@{ch_id}/live",
+            "--no-playlist",
+            "-o", output_path
         ]
     else:
         # 기타 플랫폼: Streamlink 커맨드 조립

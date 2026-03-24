@@ -846,3 +846,11 @@ TYPE: execute_and_update
 TARGET: /app/extractors/tiktok.py, /app/extractors/kick.py, /app/extractors/soop.py, /docker-compose.yml, /app/services/scheduler.py
 DESCRIPTION: Phase 4 틱톡 WAF 우회(yt-dlp 적용), Kick 신규 웹스트림 기능 추가, SOOP 헤더 파라미터 브라우저 모방 패치, 도커 컨테이너 .env 볼륨 마운트 증발 버그 픽스 성공 및 VOD 다운로더 워커 로직 호환성 점검 검수 완료.
 RESULT: 성공
+
+[2026-03-24 12:24:22]
+MODEL: Gemini 3.1 Pro(High)
+MCP: bash-pro, github-mcp-server
+TYPE: code_modify
+TARGET: /frontend/api.js, /app/services/scheduler.py
+DESCRIPTION: Phase 5 - VOD URL 수동녹화 입력란 패스스루 라우팅 추가 (유튜브/SOOP), 틱톡 레코더 파이프라인 FFmpeg 403 회피를 위해 yt-dlp 네이티브 방식으로 전면 교체.
+RESULT: 성공
