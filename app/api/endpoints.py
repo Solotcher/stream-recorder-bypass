@@ -8,7 +8,7 @@ from fastapi import APIRouter
 
 from app.api.channels import router as channels_router
 from app.api.recordings import router as recordings_router
-from app.api.settings import router as settings_router
+from app.api.config_routes import router as settings_router
 from app.api.vod import router as vod_router
 
 router = APIRouter()
