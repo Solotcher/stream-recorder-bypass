@@ -11,7 +11,6 @@
 
 <body>
     <div class="app-layout">
-        <!-- Sidebar Navigation -->
         <nav class="sidebar">
             <div class="sidebar-header">
                 <span class="logo-icon">🔴</span>
@@ -32,18 +31,15 @@
             </div>
         </nav>
 
-        <!-- Main Content Area -->
-            <!-- View 1: Unified Dashboard (대시보드: 수동시작 + 현재상태) -->
+        <main class="main-content">
             <div id="view-dashboard" class="view-content active">
                 <header class="view-header">
                     <h1>통합 녹화 대시보드</h1>
                     <p class="subtitle">방송국 URL을 입력하여 즉각적인 녹화를 시작하거나, 백그라운드 진행 현황을 파악합니다.</p>
                 </header>
 
-                <!-- 수동 즉시 녹화 입력창 블록 -->
                 <div class="glass-card" style="margin-bottom: 20px;">
-                    <div class="quick-action-bar"
-                        style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <div class="quick-action-bar" style="display: flex; gap: 10px; flex-wrap: wrap;">
                         <input type="text" id="manual_url_input"
                             placeholder="방송 채널 URL 또는 VOD (예: https://youtube.com/watch?v=...)"
                             style="flex: 1; min-width: 300px;">
@@ -55,15 +51,18 @@
                             <option value="youtube">유튜브</option>
                             <option value="tiktok">틱톡</option>
                         </select>
-                        <input type="password" id="manual_stream_password" placeholder="비밀번호 방인 경우 입력 (선택)" style="flex: 1; min-width: 200px; padding: 0.75rem; border-radius: 6px; background: rgba(1, 4, 9, 0.8); border: 1px solid var(--glass-border); color: var(--text-primary);">
+                        <input type="password" id="manual_stream_password" placeholder="비밀번호 방인 경우 입력 (선택)"
+                            style="flex: 1; min-width: 200px; padding: 0.75rem; border-radius: 6px; background: rgba(1, 4, 9, 0.8); border: 1px solid var(--glass-border); color: var(--text-primary);">
                         <button id="btn_manual_record" class="btn btn-primary">🔴 강제 시작</button>
                     </div>
                 </div>
 
-                <!-- 현재 녹화 현황 리스트 블록 -->
                 <div style="display: flex; align-items: center; margin-top: 35px; margin-bottom: 15px;">
-                    <div style="width: 4px; height: 18px; background-color: var(--accent); margin-right: 10px; border-radius: 2px;"></div>
-                    <h3 style="font-weight: 500; font-size: 1.15rem; color: var(--text-primary); margin: 0;">🔴 실시간 백그라운드 녹화 현황</h3>
+                    <div
+                        style="width: 4px; height: 18px; background-color: var(--accent); margin-right: 10px; border-radius: 2px;">
+                    </div>
+                    <h3 style="font-weight: 500; font-size: 1.15rem; color: var(--text-primary); margin: 0;">🔴 실시간
+                        백그라운드 녹화 현황</h3>
                 </div>
                 <div class="glass-card">
                     <div class="table-container">
@@ -79,7 +78,8 @@
                             </thead>
                             <tbody id="activeJobsTbody">
                                 <tr>
-                                    <td colspan="5" style="text-align:center; padding: 20px; color:var(--text-secondary);">
+                                    <td colspan="5"
+                                        style="text-align:center; padding: 20px; color:var(--text-secondary);">
                                         진행 중인 녹화 작업이 없습니다.
                                     </td>
                                 </tr>
@@ -89,7 +89,6 @@
                 </div>
             </div>
 
-            <!-- View 2: Scheduled (예약 모니터링) -->
             <div id="view-scheduled" class="view-content">
                 <header class="view-header" style="display: flex; justify-content: space-between; align-items: center;">
                     <div>
@@ -112,7 +111,6 @@
                                 </tr>
                             </thead>
                             <tbody id="channelTbody">
-                                <!-- JS Render -->
                             </tbody>
                         </table>
                     </div>
@@ -121,7 +119,6 @@
         </main>
     </div>
 
-    <!-- 모달: 채널 추가 -->
     <div id="addModal" class="modal-overlay">
         <div class="modal-content glass-card">
             <h3>예약 채널 등록</h3>
@@ -158,12 +155,12 @@
             </div>
             <div style="display: flex; gap: 10px; margin-top: 20px;">
                 <button id="btn_submit_channel" class="btn btn-primary" style="flex:1">추가</button>
-                <button id="btn_close_add_modal" class="btn" style="flex:1; border-color: rgba(255,255,255,0.2)">취소</button>
+                <button id="btn_close_add_modal" class="btn"
+                    style="flex:1; border-color: rgba(255,255,255,0.2)">취소</button>
             </div>
         </div>
     </div>
 
-    <!-- 모달: 쿠키/설정 관리 -->
     <div id="configModal" class="modal-overlay">
         <div class="modal-content glass-card" style="max-width: 600px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -177,21 +174,26 @@
                 <button class="btn btn-sm config-main-tab" data-tab="system">🛠 시스템/알림 설정</button>
             </div>
 
-            <!-- 쿠키 탭 내용 -->
             <div id="tab-content-cookie" class="config-tab-content active">
                 <p style="margin-bottom: 20px; color:var(--text-secondary); font-size: 0.9em;">
                     EditThisCookie 확장 프로그램에서 복사한 Netscape 형식(`.txt`)이나 JSON 형식을 통째로 붙여넣어 주시면
                     서버가 스마트하게 파싱합니다.
                 </p>
                 <div class="tabs" style="display:flex; margin-bottom: 10px; gap: 5px;">
-                    <button class="btn btn-sm cookie-sub-tab active" data-cookie-platform="chzzk">치지직 <span id="cookie_dot_chzzk" style="font-size:8px;">●</span></button>
-                    <button class="btn btn-sm cookie-sub-tab" data-cookie-platform="twitch">트위치 <span id="cookie_dot_twitch" style="font-size:8px;">●</span></button>
-                    <button class="btn btn-sm cookie-sub-tab" data-cookie-platform="soop">숲(SOOP) <span id="cookie_dot_soop" style="font-size:8px;">●</span></button>
-                    <button class="btn btn-sm cookie-sub-tab" data-cookie-platform="youtube">유튜브 <span id="cookie_dot_youtube" style="font-size:8px;">●</span></button>
-                    <button class="btn btn-sm cookie-sub-tab" data-cookie-platform="tiktok">틱톡 <span id="cookie_dot_tiktok" style="font-size:8px;">●</span></button>
+                    <button class="btn btn-sm cookie-sub-tab active" data-cookie-platform="chzzk">치지직 <span
+                            id="cookie_dot_chzzk" style="font-size:8px;">●</span></button>
+                    <button class="btn btn-sm cookie-sub-tab" data-cookie-platform="twitch">트위치 <span
+                            id="cookie_dot_twitch" style="font-size:8px;">●</span></button>
+                    <button class="btn btn-sm cookie-sub-tab" data-cookie-platform="soop">숲(SOOP) <span
+                            id="cookie_dot_soop" style="font-size:8px;">●</span></button>
+                    <button class="btn btn-sm cookie-sub-tab" data-cookie-platform="youtube">유튜브 <span
+                            id="cookie_dot_youtube" style="font-size:8px;">●</span></button>
+                    <button class="btn btn-sm cookie-sub-tab" data-cookie-platform="tiktok">틱톡 <span
+                            id="cookie_dot_tiktok" style="font-size:8px;">●</span></button>
                 </div>
 
-                <div id="cookie_status_bar" style="padding: 8px 12px; border-radius: 8px; margin-bottom: 12px; font-size: 0.85em; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border);">
+                <div id="cookie_status_bar"
+                    style="padding: 8px 12px; border-radius: 8px; margin-bottom: 12px; font-size: 0.85em; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border);">
                     쿠키 상태를 불러오는 중...
                 </div>
 
@@ -205,7 +207,6 @@
                 </div>
             </div>
 
-            <!-- 시스템 탭 내용 -->
             <div id="tab-content-system" class="config-tab-content" style="display:none;">
                 <div class="input-group">
                     <label>Telegram Bot Token (알림용)</label>
@@ -231,7 +232,8 @@
                     <label>Rclone 클라우드 원격지 (입력 시 자동 업로드 활성화)</label>
                     <input type="text" id="sys_rclone_remote" placeholder="예: gdrive:/Backups (작업명:경로 형식)">
                     <small style="color:var(--text-secondary); display:block; margin-top:5px;">
-                        시스템에 Rclone 명령어가 설치되어 있어야 하며 저장된 Remote 프로파일을 사용합니다. 녹화(및 병합)가 안전하게 완료되면 백그라운드로 업로드 파이프라인이 실행됩니다.
+                        시스템에 Rclone 명령어가 설치되어 있어야 하며 저장된 Remote 프로파일을 사용합니다. 녹화(및 병합)가 안전하게 완료되면 백그라운드로 업로드 파이프라인이
+                        실행됩니다.
                     </small>
                 </div>
 
@@ -239,7 +241,8 @@
                     <label>파일명 패턴</label>
                     <input type="text" id="sys_filename_pattern" placeholder="{date}_{streamer}_{title}_{quality}">
                     <small style="color:var(--text-secondary); display:block; margin-top:5px;">
-                        사용 가능 변수: <code>{date}</code> (YYYYMMDD), <code>{streamer}</code> (스트리머명), <code>{title}</code> (방송제목), <code>{quality}</code> (화질), <code>{platform}</code> (플랫폼)
+                        사용 가능 변수: <code>{date}</code> (YYYYMMDD), <code>{streamer}</code> (스트리머명), <code>{title}</code>
+                        (방송제목), <code>{quality}</code> (화질), <code>{platform}</code> (플랫폼)
                     </small>
                 </div>
 
@@ -250,7 +253,6 @@
         </div>
     </div>
 
-    <!-- Toast 알림 컨테이너 -->
     <div id="toast-container" class="toast-container"></div>
 
     <script type="module" src="/static/script.js"></script>

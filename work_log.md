@@ -870,3 +870,22 @@ TYPE: execute_and_update
 TARGET: /README.md, 등 로컬실행 파일 제거
 DESCRIPTION: 사용자 요청에 따라 로컬 전용 구동 스크립트(.bat, .ps1, .sh 등) 및 OS별 Readme 통째 삭제, 메인 README.md 문서 도커 전용 설명으로 통합 정리.
 RESULT: 성공
+[2026-03-24 13:16:34]
+MODEL: Gemini 3.1 Pro(High)
+MCP: default_api
+TYPE: Debug & Handover
+TARGET: /frontend/index.html
+DESCRIPTION: 통합 대시보드 UI 브라우저 렌더링 누락 이슈 트러블슈팅. 실제 운영(D:) 도커 경로 동기화 강제 완료. API 서버의 응답 패킷(HTML) 내에는 최신 요소가 100% 정상 포함됨을 터미널로 확인했으나, 브라우저 화면에서만 해당 노드가 렌더링되지 않음.
+RESULT: 진행 보류 (다음 세션 이관)
+NEXT_STEP_PLAN:
+1. CSS 계층 가리기 여부: frontend/style.css 내 view-content 하위 요소에 대한 margin/display/color 충돌 정밀 검증.
+2. JS의 의도치 않은 DOM 조작 여부: api.js 또는 script.js가 DOM을 렌더링할 때 innerHTML 로 덮어쓰거나, sibling 요소를 훼손하는 잠재적 로직 검증.
+3. DOM 위치 변경 전략: index.html 의 <h3> 타이틀 블록을 table 태그 바로 안쪽 등 Javascript의 간섭을 받지 않는 절대적 위치로 옮겨 렌더링 테스트 진행.
+
+[2026-03-24 14:15:00]
+MODEL: Antigravity
+MCP: default_api
+TYPE: commit_push
+TARGET: /frontend/index.html, Github Repository
+DESCRIPTION: 사용자가 직접 이전 세션에서 발생했던 UI 브라우저 렌더링 누락 이슈(수동녹화 뷰 레이아웃)를 해결하고 윈도우/도커 환경에 맞게 로컬 수정 완료. 수동 변경된 `index.html` 내역과 관련 작업 로그를 원격 Git 저장소(Origin/Main)에 커밋(Commit) 및 푸시(Push) 완료.
+RESULT: 성공
