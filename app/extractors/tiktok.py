@@ -53,7 +53,7 @@ class TikTokExtractor(BaseExtractor):
         return {
             "status": "OPEN",
             "title": info.get("title", f"{self.channel_id} TikTok Live"),
-            "channel_name": info.get("uploader_id") or info.get("uploader") or self.channel_id,
+            "channel_name": info.get("uploader") or self.channel_id,
             "nickname": info.get("uploader", self.channel_id),
             "stream_url": self.stream_url,
             "thumbnail_url": info.get("thumbnail", ""),
@@ -65,7 +65,7 @@ class TikTokExtractor(BaseExtractor):
         info = await self._extract_with_ytdlp()
         if info:
             return {
-                "channel_name": info.get("uploader_id") or info.get("uploader") or self.channel_id,
+                "channel_name": info.get("uploader") or self.channel_id,
                 "nickname": info.get("uploader", self.channel_id),
             }
         return {"channel_name": self.channel_id}
