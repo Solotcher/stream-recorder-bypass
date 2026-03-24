@@ -1,122 +1,106 @@
 # Stream Recorder (다중 플랫폼 자동 녹화기)
 
-치지직(Chzzk), 아프리카TV(SOOP), 트위치(Twitch), **유튜브(YouTube)** 방송을 모니터링하고 자동으로 녹화하는 웹 애플리케이션입니다.
+치지직(Chzzk), 아프리카TV(SOOP), 트위치(Twitch), 유튜브(YouTube), 틱톡(TikTok) 라이브, 인스타그램(Instagram) 라이브 방송을 모니터링하고 자동으로 녹화하며, 유튜브 VOD 비동기 다운로드 기능을 지원하는 **엔터프라이즈급 아키텍처 웹 애플리케이션**입니다.
 
 > [!WARNING]
 > **SOOP(아프리카TV) 플랫폼 안내**: 현재 SOOP의 녹화 로직에 문제가 있어 원활한 녹화가 이루어지지 않을 수 있습니다. 녹화 로직 및 세그먼트 처리 방식이 아직 원활하지 않으니 사용 시 참고 부탁드립니다.
 
-## 주요 특징
+## 핵심 특징
 
-- **다중 플랫폼 지원**: Chzzk, SOOP, Twitch, **YouTube** 완벽 대응.
-- **자동 녹화**: 스트리머가 방송을 시작하면 자동으로 감지하여 녹화를 시작합니다.
-- **의존성 자동 관리**: FFmpeg, Streamlink, yt-dlp가 없어도 실행 시 자동으로 환경에 맞춰 다운로드 및 설정됩니다.
-- **MP4 자동 리먹싱**: 녹화 완료(또는 강제 종료) 후 고화질 유지 및 스트리밍에 최적화된 MP4 형식으로 자동 변환합니다.
-- **후처리 안전 보호**: 리먹싱/병합 실패 시에도 원본 파일이 안전하게 보존되며, FFmpeg 에러 로그가 기록됩니다.
-- **파일명 커스터마이징**: `{date}`, `{streamer}`, `{title}`, `{quality}` 등 다양한 변수를 조합한 파일명 규칙 설정 가능.
-- **웹 UI 제공**: 브라우저에서 간편하게 스트리머 추가, 쿠키 관리, 설정 변경이 가능합니다.
-- **안정적인 프로세스 관리**: 서버 재시작 시에도 기존 녹화 중인 프로세스를 자동으로 감지하여 연결을 유지합니다.
-- **클라우드 자동 업로드**: rclone 연동으로 녹화 완료 후 구글 드라이브 등 클라우드에 자동 백업.
-- **아키텍처 모듈화 및 안정성 보장**: 통합 예외 처리(Global Exception Handler), Trace ID 기반 추적, 그리고 데이터베이스 Lock 등 안정적이고 견고한 엔터프라이즈 환경 구조(SRP, DRY)가 적용되었습니다.
+- **멀티 플랫폼 완벽 대응**: Chzzk, SOOP, Twitch, YouTube 라이브는 물론 신규 연동된 **TikTok**, **Instagram Live** 모니터링 및 녹화를 기본 지원합니다.
+- **백그라운드 VOD 다운로드**: 유튜브 VOD URL만 던지면 워커가 백그라운드에서 다운로드 후 서버에 저장해 줍니다.
+- **엔터프라이즈급 안정성**: 
+  - 과거 JSON 파일 I/O로 인한 병목 현상을 타파하고 **SQLite (+ SQLAlchemy 객체 매핑)** 기반 시스템으로 마이그레이션하여 동시성 무결성을 보장합니다.
+  - 무거운 FFmpeg 인코딩 및 다운로드 작업을 메인 서버에서 떼어내 **Celery + Redis 기반 비동기 분산 워커 큐**로 오프로딩시켰습니다.
+- **의존성 자동 관리**: FFmpeg, Streamlink, yt-dlp가 없어도 실행 시 자동으로 환경에 맞춰 최신 버전으로 다운로드/업데이트됩니다.
+- **자동 리먹싱 & 후처리 보호**: 녹화 완료 후 MP4 형식으로 자동 변환. 실패 시 원본 파일(.ts)이 안전하게 보존되며 에러 로그가 남습니다.
+- **클라우드 자동 업로드**: rclone 연동으로 녹화 완료 후 구글 드라이브 등 클라우드에 100% 자동 백업 및 용량 확보.
 
 ---
 
-## 설치 및 실행 방법 (Requirement: Python 3.10+)
+## 설치 및 실행 방법 (권장 환경: Docker 기반 Python 3.14 OCI 배포)
 
-### 1. Windows (윈도우)
+이 프로그램은 Docker를 통한 `docker-compose` 배포를 가장 강력히 권장합니다.
 
-1. 저장소 클론: `git clone https://github.com/Solotcher/stream-recorder.git`
-2. 해당 폴더로 이동: `cd stream-recorder`
-3. **방법 A (배치 파일)**: `start.bat` 실행 (자동으로 가상환경 구축 후 서버 실행)
-4. **방법 B (파워쉘)**: `PowerShell -ExecutionPolicy Bypass -File start.ps1` 실행
-
-### 2. Linux (리눅스 / Ubuntu, OCI 등)
+### 0. Docker (가장 쉽고 강력한 방법 / 적극 권장)
 
 ```bash
 # 저장소 클론
 git clone https://github.com/Solotcher/stream-recorder.git
 cd stream-recorder
 
-# 실행 권한 부여 및 실행
+# 백그라운드 컨테이너 빌드 및 론칭
+docker compose up -d --build
+```
+*위 명령어 한 줄로 **Python 3.14 (Free-threaded/No-GIL)** 기반의 메인 서버 컨테이너, **Redis** 메시지 브로커 컨테이너, 그리고 인코딩 전담 **Celery 워커** 컨테이너가 일괄 구축되며 하드웨어의 병렬 성능이 100% 해제됩니다.* 녹화된 결과물은 호스트 PC의 `./output` 에 영구 저장됩니다.
+
+### 1. Windows (도커를 사용하지 않는 로컬 구동)
+
+1. 저장소 클론: `git clone https://github.com/Solotcher/stream-recorder.git`
+2. 환경 의존성 (Redis) 준비: 윈도우용 Redis 서버가 구동 중이어야 합니다.
+3. 파이썬 가상환경 빌드 후 `pip install -r requirements.txt` 진행.
+4. (터미널 1) 메인 서버 실행: `uvicorn app.main:app`
+5. (터미널 2) 인코딩 워커 실행: `celery -A app.worker.celery_app.celery_app worker --loglevel=info -P threads`
+
+### 2. Linux 로컬 구동 (Ubuntu, OCI 등)
+
+```bash
+git clone https://github.com/Solotcher/stream-recorder.git
+cd stream-recorder
+
+# 기존 레거시 스크립트로 메인 서버 구동
 chmod +x start.sh
 ./start.sh
+# (주의: 백그라운드 Celery Worker는 별도로 구동해주셔야 동영상 합치기 및 VOD 기능이 동작합니다)
 ```
-
-이 스크립트는 내부적으로 가상환경(`.venv`) 생성, 필수 패키지 설치, `.env` 기본값 설정을 모두 자동으로 수행합니다.
-
-> [!TIP]
-> OCI(Oracle Cloud) 등 클라우드 환경에서는 8000번 포트 방화벽을 열어야 외부 접속이 가능합니다.
-> ```bash
-> sudo iptables -I INPUT -p tcp --dport 8000 -j ACCEPT
-> ```
 
 ---
 
 ## 환경 설정 (.env)
 
-최초 실행 시 `.env` 파일이 생성됩니다. 다음 항목을 필요에 따라 수정하세요:
+최초 실행 시 `.env` 파일이 생성됩니다. 다음 항목을 프로젝트 상황에 맞게 수정하세요:
 
-- `OUTPUT_DIR`: 녹화 파일 저장 경로 (기본: `output`)
-- `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`: 알림 설정
+- `OUTPUT_DIR`: 녹화 파일 저장 경로 (Docker 구동 시 수정 불필요, `docker-compose.yml` 바인드 마운트 활용 권장)
+- `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`: 상태 알림 전송용 텔레그램 봇
 - `FILENAME_PATTERN`: 파일명 생성 규칙 (예: `{date}_{streamer}_{title}_{quality}`)
-- `RCLONE_REMOTE`: rclone 원격 저장소 이름 (클라우드 백업용)
-- `USER_AGENT`: 브라우저 식별 정보
+- `RCLONE_REMOTE`: 클라우드 연동 업로드 리모트
+- `USER_AGENT`: 모바일 & PC 크롤링 우회용 User-Agent
 
 ---
 
 ## 사용 방법
 
-1. 서버 실행 후 웹 브라우저에서 `http://localhost:8000` (또는 서버IP:8000) 접속.
+1. 대시보드 진입: 브라우저에서 `http://localhost:8000` (클라우드 구동 시 서버IP:8000) 접속.
 2. **채널 관리** 탭에서 플랫폼 선택 후 스트리머 ID 또는 URL을 입력하여 추가하세요.
    - 치지직: `chzzk.naver.com/채널ID`
    - 트위치: `twitch.tv/아이디`
-   - 숲: `play.sooplive.co.kr/아이디`
    - 유튜브: `youtube.com/@핸들` 또는 `youtube.com/channel/UC채널ID`
-3. **쿠키 관리** 탭에서 유료/성인용/멤버십 방송 녹화를 위한 쿠키 데이터를 저장할 수 있습니다.
-4. 방송이 시작되면 자동으로 지정된 폴더에 파일이 저장됩니다.
+   - 틱톡/인스타그램: 각 플랫폼 계정 ID (`@` 생략 가능)
+3. **쿠키 관리** 탭에서 인스타그램, 틱톡 등의 멤버십 방송 녹화 및 밴 우회를 위한 브라우저 우회 전용 쿠키를 입양할 수 있습니다.
 
 ---
 
-## 기술 스택
+## 기술 스택 (Tech Stack)
 
-- **Backend**: FastAPI (Python)
-- **Frontend**: Vanilla JS (ES Modules), CSS (Glassmorphism UI)
-- **녹화 엔진**: Streamlink (치지직/트위치/숲), yt-dlp (유튜브)
+- **Backend**: FastAPI (Python 3.14 튜닝), Pydantic
+- **Database**: SQLite & SQLAlchemy ORM
+- **Background Queue**: Celery, Redis (비동기 인코딩 및 VOD 병합 파이프라인 전담)
+- **Frontend**: Vanilla JS (ES Modules), CSS (Glassmorphism & Interactive UI)
+- **추출 및 녹화 엔진**: Streamlink (Chzzk, Twitch, SOOP, Instagram), yt-dlp (YouTube), FFmpeg Native (TikTok)
 - **후처리**: FFmpeg (Remuxing / Concat)
-- **테스트 및 검증**: Pytest, TestClient, TestSprite 연동
-- **Dependency**: `psutil`, `aiohttp`, `apscheduler` 등
-
----
-
-## 🧪 자동화 테스트 (Testing)
-
-이 프로젝트는 `pytest` 프레임워크와 FastAPI의 `TestClient`를 기반으로 백엔드 API에 대한 단위 및 통합 테스트 환경을 제공합니다. 
-또한 AI 테스트 생성 서비스인 `TestSprite` 와 호환되도록 구성되었습니다.
-
-```bash
-# 전체 테스트 실행
-python -m pytest tests/ -v
-
-# 또는 특정 파일만 테스트
-python -m pytest tests/test_api.py -v
-```
-
-테스트를 실행하면, 인증 로직(`X-API-Key`) 및 `Trace ID` 미들웨어, 유효하지 않은 엔드포인트(404) 처리 등 코어 기능의 안정성을 검증합니다.
 
 ---
 
 ## 🤖 AI 개발 안내
 
-이 프로젝트의 모든 코드는 **100% AI에 의해 작성**되었습니다.
+이 프로젝트의 모든 아키텍처 인프라 코드와 프론트엔드/백엔드 비즈니스 로직은 **100% AI에 의해 작성**되었습니다.
 
 **사용된 AI 모델:**
-- **Claude Opus 4.6** (Anthropic) — 핵심 아키텍처 설계, 백엔드/프론트엔드 전체 구현, 버그 수정, 리팩토링
-- **Gemini 3.1 Pro(High)** (Google) — 전반적인 시스템 고도화(예외 처리, 모듈화, Lock 적용), TestSprite 단위 테스트 환경 구축, 코드 안정성 개선 및 리팩토링 (Phase 1~5)
-
-> [!NOTE]
-> 코드 작성, 디버깅, 기능 추가, 테스트, 문서화까지 모든 개발 과정이 AI를 통해 수행되었습니다.
+- **Claude Opus 4.6** (Anthropic) — 핵심 아키텍처 기반 설계, 백엔드/프론트엔드 전체 초기 구현, 레거시 버그 수정
+- **Gemini 3.1 Pro(High)** (Google DeepMind) — 전반적인 시스템 고도화, 신규 플랫폼(TikTok, Instagram) 확장, OCI 클라우드 및 Docker(3.14 No-GIL) 체제 이식, SQLite 및 Celery+Redis를 관통하는 차세대 아키텍처 전면 개편(Phase 1~3 완전 수행)
 
 ---
 
 ## 기여 및 문의
 
-문제가 있거나 추가 기능이 필요한 경우 이슈를 남겨주세요.
+배포 및 실행 중 발생하는 장애, 추가 플랫폼 연동 기능이 필요한 경우 이슈 영역을 통해 피드백을 남겨주시면 감사히 검토하겠습니다.
