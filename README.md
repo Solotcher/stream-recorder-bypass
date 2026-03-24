@@ -22,7 +22,7 @@
 
 이 프로그램은 Docker를 통한 `docker-compose` 배포를 가장 강력히 권장합니다.
 
-### 0. Docker (가장 쉽고 강력한 방법 / 적극 권장)
+### 0. Docker (공식 배포 규격)
 
 ```bash
 # 저장소 클론
@@ -33,26 +33,6 @@ cd stream-recorder
 docker compose up -d --build
 ```
 *위 명령어 한 줄로 **Python 3.14 (Free-threaded/No-GIL)** 기반의 메인 서버 컨테이너, **Redis** 메시지 브로커 컨테이너, 그리고 인코딩 전담 **Celery 워커** 컨테이너가 일괄 구축되며 하드웨어의 병렬 성능이 100% 해제됩니다.* 녹화된 결과물은 호스트 PC의 `./output` 에 영구 저장됩니다.
-
-### 1. Windows (도커를 사용하지 않는 로컬 구동)
-
-1. 저장소 클론: `git clone https://github.com/Solotcher/stream-recorder.git`
-2. 환경 의존성 (Redis) 준비: 윈도우용 Redis 서버가 구동 중이어야 합니다.
-3. 파이썬 가상환경 빌드 후 `pip install -r requirements.txt` 진행.
-4. (터미널 1) 메인 서버 실행: `uvicorn app.main:app`
-5. (터미널 2) 인코딩 워커 실행: `celery -A app.worker.celery_app.celery_app worker --loglevel=info -P threads`
-
-### 2. Linux 로컬 구동 (Ubuntu, OCI 등)
-
-```bash
-git clone https://github.com/Solotcher/stream-recorder.git
-cd stream-recorder
-
-# 기존 레거시 스크립트로 메인 서버 구동
-chmod +x start.sh
-./start.sh
-# (주의: 백그라운드 Celery Worker는 별도로 구동해주셔야 동영상 합치기 및 VOD 기능이 동작합니다)
-```
 
 ---
 
