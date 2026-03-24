@@ -2,6 +2,14 @@ import logging
 import sys
 from logging.handlers import RotatingFileHandler
 from app.core.config import settings
+import contextvars
+
+trace_id = contextvars.ContextVar("trace_id", default="-")
+
+class TraceIdFilter(logging.Filter):
+    def filter(self, record):
+        record.trace_id = trace_id.get()
+        return True
 
 def setup_logger():
     logger = logging.getLogger(settings.APP_NAME)
@@ -10,9 +18,10 @@ def setup_logger():
         return logger
 
     logger.setLevel(logging.DEBUG if settings.DEBUG else logging.INFO)
+    logger.addFilter(TraceIdFilter())
     
     formatter = logging.Formatter(
-        "[%(asctime)s] [%(levelname)s] [%(module)s:%(lineno)d] - %(message)s"
+        "[%(asctime)s] [%(levelname)s] [%(trace_id)s] [%(module)s:%(lineno)d] - %(message)s"
     )
     
     # Console Handler

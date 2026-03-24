@@ -35,6 +35,10 @@ class ConfigRequest(BaseModel):
     RCLONE_REMOTE: Optional[str] = None
     FILENAME_PATTERN: Optional[str] = None
 
+class VodDownloadRequest(BaseModel):
+    """VOD 비동기 다운로드 요청 모델"""
+    url: str
+
 @router.get("/channels")
 async def get_channels_list():
     """ 현재 등록된 채널 목록 및 레코더 상태 반환 """
@@ -100,7 +104,7 @@ async def update_cookie(platform: str, req: CookieRequest):
 @router.get("/cookies/status")
 async def get_cookies_status():
     """각 플랫폼별 쿠키 적용 상태를 조회합니다."""
-    platforms = ["chzzk", "twitch", "soop", "youtube"]
+    platforms = ["chzzk", "twitch", "soop", "youtube", "tiktok"]
     status = {}
     for p in platforms:
         cookies = get_platform_cookies(p)
@@ -253,3 +257,18 @@ async def stop_recording_manual(channel_id: str):
         await recorder.stop_record("사용자 강제 종료")
         await broadcast_event("recording_stopped", {"id": channel_id})
     return {"status": "success"}
+
+@router.post("/vod/download")
+async def trigger_vod_download(request: VodDownloadRequest, background_tasks: BackgroundTasks):
+    """ 유튜브 등 VOD 비동기 다운로드 트리거 (Celery 기반) """
+    from app.worker.tasks import download_vod_celery_task
+    from app.core.config import settings
+    
+    if not request.url:
+        raise HTTPException(status_code=400, detail="URL is required")
+        
+    logger.info(f"VOD Celery 다운로드 요청 접수: {request.url}")
+    # Celery 백그라운드 워커에 작업 할당
+    download_vod_celery_task.delay(request.url, settings.OUTPUT_DIR)
+    
+    return {"status": "success", "message": "백그라운드 워커에서 다운로드를 시작합니다."}

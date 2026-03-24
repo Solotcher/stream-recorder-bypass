@@ -25,12 +25,15 @@ class Settings(BaseSettings):
     RCLONE_PATH: str = os.getenv("RCLONE_PATH", "rclone")
     RCLONE_REMOTE: str = os.getenv("RCLONE_REMOTE", "")
     
-    # 파일명 패턴 설정 (사용 가능 변수: {date}, {streamer}, {title}, {quality}, {platform})
-    # 기본값: yyyymmdd_스트리머명_방송제목_화질
-    FILENAME_PATTERN: str = os.getenv("FILENAME_PATTERN", "{date}_{streamer}_{title}_{quality}")
+    # 파일명 패턴 설정 (사용 가능 변수: {date}, {time}, {streamer}, {title}, {quality}, {platform})
+    # 기본값: yyyymmdd_hhmmss_스트리머명_방송제목_화질
+    FILENAME_PATTERN: str = os.getenv("FILENAME_PATTERN", "{date}_{time}_{streamer}_{title}_{quality}")
     
     # API 인증 키 (빈 문자열이면 인증 비활성화 = 개발 모드)
     API_KEY: str = os.getenv("API_KEY", "")
+    
+    # User-Agent 설정
+    USER_AGENT: str = os.getenv("USER_AGENT", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
     class Config:
         env_file = ".env"

@@ -11,12 +11,9 @@ import os
 import sys
 import asyncio
 import uuid
-import contextvars
 from fastapi.responses import JSONResponse
 from fastapi.requests import Request
-
-# 전역 컨텍스트 변수
-trace_id_ctx = contextvars.ContextVar("trace_id", default="unknown")
+from app.core.logger import trace_id
 
 # Windows 환경에서 subprocess (streamlink, ffmpeg) 비동기 실행 시 
 # NotImplementedError 가 발생하는 것을 막기 위해 ProactorEventLoop 강제 설정
@@ -69,12 +66,12 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def trace_id_middleware(request: Request, call_next):
         req_trace_id = request.headers.get("X-Trace-Id", str(uuid.uuid4()))
-        token = trace_id_ctx.set(req_trace_id)
+        token = trace_id.set(req_trace_id)
         
         response = await call_next(request)
         response.headers["X-Trace-Id"] = req_trace_id
         
-        trace_id_ctx.reset(token)
+        trace_id.reset(token)
         return response
 
     # API Key 인증 미들웨어 (설정에 API_KEY가 있을 때만 적용)
@@ -87,7 +84,7 @@ def create_app() -> FastAPI:
                 return JSONResponse(status_code=401, content={
                     "code": "AUTH_REQUIRED",
                     "message": "Invalid or missing API Key",
-                    "traceId": trace_id_ctx.get()
+                    "traceId": trace_id.get()
                 })
         return await call_next(request)
 
@@ -95,13 +92,13 @@ def create_app() -> FastAPI:
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
         err_msg = str(exc)
-        logger.error(f"[Trace: {trace_id_ctx.get()}] 전역 예외 발생: {err_msg}")
+        logger.error(f"[Trace: {trace_id.get()}] 전역 예외 발생: {err_msg}")
         return JSONResponse(
             status_code=500,
             content={
                 "code": "INTERNAL_SERVER_ERROR",
                 "message": err_msg,
-                "traceId": trace_id_ctx.get()
+                "traceId": trace_id.get()
             }
         )
 
@@ -113,6 +110,9 @@ def create_app() -> FastAPI:
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket):
+        req_trace_id = f"WS-{str(uuid.uuid4())[:8]}"
+        token = trace_id.set(req_trace_id)
+        
         await ws_manager.connect(websocket)
         try:
             while True:
@@ -120,8 +120,11 @@ def create_app() -> FastAPI:
                 await websocket.receive_text()
         except WebSocketDisconnect:
             ws_manager.disconnect(websocket)
-        except Exception:
+        except Exception as e:
+            logger.error(f"WebSocket error: {e}")
             ws_manager.disconnect(websocket)
+        finally:
+            trace_id.reset(token)
 
     # 프론트엔드 정적 디렉토리 마운트
     frontend_dir = os.path.join(settings.BASE_DIR, "frontend")

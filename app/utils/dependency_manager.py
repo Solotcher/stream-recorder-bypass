@@ -155,10 +155,16 @@ def ensure_ffmpeg() -> str:
 
 
 def ensure_streamlink() -> str:
-    """Streamlink이 사용 가능한지 확인합니다."""
+    """Streamlink이 사용 가능한지 확인하고 자동 업데이트를 시도합니다."""
     path = find_binary("streamlink", settings.STREAMLINK_PATH)
     if path:
-        logger.info(f"✅ Streamlink 확인됨: {path}")
+        logger.info(f"✅ Streamlink 확인됨: {path}. 최신 버전으로 업데이트를 시도합니다...")
+        import subprocess
+        try:
+            subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", "streamlink", "--quiet"], check=False)
+            logger.info("🎉 Streamlink 업데이트 체크 완료.")
+        except Exception as e:
+            logger.warning(f"⚠️ Streamlink 업데이트 실패 (무시됨): {e}")
         return path
     
     logger.warning("⚠️ Streamlink를 찾을 수 없습니다. 'pip install streamlink'으로 설치해주세요.")
@@ -174,12 +180,18 @@ YTDLP_URLS = {
 
 def ensure_ytdlp() -> str:
     """
-    yt-dlp가 사용 가능한지 확인하고, 없으면 자동 다운로드합니다.
+    yt-dlp가 사용 가능한지 확인하고, 없으면 자동 다운로드, 있으면 자동 업데이트합니다.
     반환: yt-dlp 전체 경로
     """
     path = find_binary("yt-dlp", settings.YTDLP_PATH)
     if path:
-        logger.info(f"✅ yt-dlp 확인됨: {path}")
+        logger.info(f"✅ yt-dlp 확인됨: {path}. 최신 버전으로 업데이트를 시도합니다...")
+        import subprocess
+        try:
+            subprocess.run([path, "-U"], capture_output=True, text=True, check=False)
+            logger.info("🎉 yt-dlp 업데이트 체크 완료.")
+        except Exception as e:
+            logger.warning(f"⚠️ yt-dlp 업데이트 실패 (무시됨): {e}")
         return path
     
     # 다운로드 시도

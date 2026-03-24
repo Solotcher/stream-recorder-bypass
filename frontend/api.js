@@ -17,6 +17,12 @@ export function parseChannelUrl(inputStr, fallbackPlatform) {
     const twitchMatch = inputStr.match(/twitch\.tv\/([a-zA-Z0-9_]+)/);
     if (twitchMatch) { platform = 'twitch'; ch_id = twitchMatch[1]; }
 
+    const youtubeMatch = inputStr.match(/youtube\.com\/(?:@([a-zA-Z0-9_-]+)|channel\/([a-zA-Z0-9_-]+)|live\/([a-zA-Z0-9_-]+))/);
+    if (youtubeMatch) { platform = 'youtube'; ch_id = youtubeMatch[1] || youtubeMatch[2] || youtubeMatch[3]; }
+
+    const tiktokMatch = inputStr.match(/tiktok\.com\/@([a-zA-Z0-9_.-]+)/);
+    if (tiktokMatch) { platform = 'tiktok'; ch_id = tiktokMatch[1]; }
+
     if (ch_id.includes('/')) {
         ch_id = ch_id.split('/')[0];
     }
@@ -299,7 +305,7 @@ export async function fetchCookieStatus() {
 
             if (statusBar) {
                 let statusHtml = '';
-                const platforms = { chzzk: '치지직', twitch: '트위치', soop: '숲', youtube: '유튜브' };
+                const platforms = { chzzk: '치지직', twitch: '트위치', soop: '숲', youtube: '유튜브', tiktok: '틱톡' };
 
                 for (const [plat, name] of Object.entries(platforms)) {
                     // 서버가 {"applied": true} 형태로 주는 값을 파싱합니다.
@@ -353,7 +359,7 @@ export async function switchCookieTab(tabName) {
 
     const label = document.getElementById('cookie_label');
     if (label) {
-        const platformNames = { 'chzzk': '치지직(Chzzk)', 'twitch': '트위치(Twitch)', 'soop': '숲(SOOP)', 'youtube': '유튜브(YouTube)' };
+        const platformNames = { 'chzzk': '치지직(Chzzk)', 'twitch': '트위치(Twitch)', 'soop': '숲(SOOP)', 'youtube': '유튜브(YouTube)', 'tiktok': '틱톡(TikTok)' };
         label.innerText = `${platformNames[tabName] || tabName} 통합 쿠키 뭉치 입력`;
     }
 }

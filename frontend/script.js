@@ -65,10 +65,13 @@ const initApp = async () => {
 
     try {
         await fetchChannels();
+        // [추가됨] 페이지 새로고침(F5) 시 60초를 기다리지 않고 현재 녹화 현황을 즉시 불러옵니다.
+        await fetchActiveJobs();
     } catch (e) {
         console.error('[App] 초기 데이터 로드 실패:', e);
     }
 
+    // 이후에는 지정된 시간(10초, 60초)마다 주기적으로 업데이트합니다.
     setInterval(fetchChannels, CONFIG.POLLING_INTERVAL_CHANNELS);
     setInterval(fetchActiveJobs, CONFIG.POLLING_INTERVAL_JOBS);
 

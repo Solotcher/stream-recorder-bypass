@@ -65,22 +65,21 @@ class BaseExtractor(ABC):
         공통 HTTP JSON 요청 유틸리티. 전역 세션을 재사용하여 오버헤드를 낮추고, Request Timeout을 제한합니다.
         """
         req_headers = headers or self.headers.copy()
-        
-        # 각 요청 단위 타임아웃 설정
         client_timeout = aiohttp.ClientTimeout(total=timeout)
         
         try:
             session = await get_shared_session()
-            if method.upper() == "POST":
-                async with session.post(url, headers=req_headers, data=data, json=json_body, timeout=client_timeout) as response:
-                    if response.status == 200:
-                        return await response.json()
-                    logger.warning(f"HTTP {response.status} from {url}")
-            else:
-                async with session.get(url, headers=req_headers, timeout=client_timeout) as response:
-                    if response.status == 200:
-                        return await response.json()
-                    logger.warning(f"HTTP {response.status} from {url}")
+            request_kwargs = {
+                "headers": req_headers,
+                "timeout": client_timeout
+            }
+            if data: request_kwargs["data"] = data
+            if json_body: request_kwargs["json"] = json_body
+            
+            async with session.request(method.upper(), url, **request_kwargs) as response:
+                if response.status == 200:
+                    return await response.json()
+                logger.warning(f"HTTP {response.status} from {url}")
         except asyncio.TimeoutError:
             logger.error(f"HTTP 통신 타임아웃 발생 ({url}) - {timeout}초 초과")
         except Exception as e:

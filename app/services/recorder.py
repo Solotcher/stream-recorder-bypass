@@ -1,6 +1,7 @@
 import asyncio
 import os
 import shlex
+import subprocess
 import psutil
 from datetime import datetime
 from typing import Optional
@@ -116,16 +117,18 @@ class RecorderManager:
 
             # 후처리 트리거 분기
             # SOOP: 방종 판단(scheduler) 시 일괄 병합(concat)하므로 단건 리먹싱 생략
-            # YouTube: yt-dlp가 직접 MP4로 녹화하므로 리먹싱 불필요
-            if self.session_platform == "youtube":
-                await send_telegram_message(f"<b>{channel_name}</b> 유튜브 녹화 완료. (.mp4)")
+            # YouTube/TikTok: 직접 MP4로 녹화하므로 리먹싱 불필요
+            if self.session_platform in ("youtube", "tiktok"):
+                platform_name = "유튜브" if self.session_platform == "youtube" else "틱톡"
+                await send_telegram_message(f"<b>{channel_name}</b> {platform_name} 녹화 완료. (.mp4)")
                 # 클라우드 자동 업로드 트리거
                 from app.services.uploader import upload_file
                 import asyncio as _asyncio
                 _asyncio.create_task(upload_file(self.output_path, channel_name))
             elif self.session_platform != "soop":
-                await send_telegram_message(f"<b>{channel_name}</b> 녹화 종료. 후처리(Remuxing)를 시작합니다.")
-                await process_remuxing(self.output_path, channel_name)
+                await send_telegram_message(f"<b>{channel_name}</b> 녹화 종료. 백그라운드 워커(Celery)에서 후처리(Remuxing)를 시작합니다.")
+                from app.worker.tasks import process_remuxing_celery_task
+                process_remuxing_celery_task.delay(self.output_path, channel_name)
             else:
                 await send_telegram_message(f"<b>{channel_name}</b> 녹화 파트({self.session_part}) 종료. 방종 대기 중...")
             

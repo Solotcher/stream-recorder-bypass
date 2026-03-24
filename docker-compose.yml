@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  stream-recorder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: stream-recorder-app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      # 로컬 DB 및 설정 파일 영속성 보장
+      - ./data:/app/data
+      # 다운로드되는 녹화본이 저장될 로컬 디렉토리
+      - ./output:/app/output
+      # 외부 의존성(yt-dlp 등) 바이너리 영속성 보장
+      - ./bin:/app/bin
+    environment:
+      - TZ=Asia/Seoul
+      - REDIS_URL=redis://redis:6379/0
+      # 아래 변수들은 컨테이너 내에서 `app.core.config.py`의 기본값을 오버라이드합니다.
+      # - TELEGRAM_BOT_TOKEN=YOUR_TOKEN
+      # - TELEGRAM_CHAT_ID=YOUR_CHAT_ID
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:alpine
+    container_name: stream-recorder-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: stream-recorder-celery
+    restart: unless-stopped
+    command: ["celery", "-A", "app.worker.celery_app.celery_app", "worker", "--loglevel=info", "--pool=threads", "--concurrency=4"]
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./bin:/app/bin
+    environment:
+      - TZ=Asia/Seoul
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis

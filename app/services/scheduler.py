@@ -19,12 +19,16 @@ from app.extractors.chzzk import ChzzkExtractor
 from app.extractors.twitch import TwitchExtractor
 from app.extractors.soop import SoopExtractor
 from app.extractors.youtube import YouTubeExtractor
+from app.extractors.tiktok import TikTokExtractor
+from app.extractors.instagram import InstagramExtractor
 
 EXTRACTOR_MAP = {
     "chzzk": ChzzkExtractor,
     "twitch": TwitchExtractor,
     "soop": SoopExtractor,
-    "youtube": YouTubeExtractor
+    "youtube": YouTubeExtractor,
+    "tiktok": TikTokExtractor,
+    "instagram": InstagramExtractor
 }
 
 # 글로벌 스케줄러 인스턴스
@@ -73,6 +77,7 @@ async def trigger_recording(ch_id: str, platform: str, ch_name: str, extractor, 
     safe_name = _safe(ch_name)
     safe_title = _safe(meta.get("title", "제목없음"))
     date_str = recorder.session_started_at.strftime("%Y%m%d")
+    time_str = recorder.session_started_at.strftime("%H%M%S")
     
     # FILENAME_PATTERN을 사용하여 파일명 생성
     pattern = settings.FILENAME_PATTERN
@@ -94,6 +99,7 @@ async def trigger_recording(ch_id: str, platform: str, ch_name: str, extractor, 
     display_quality = format_quality_display(actual_resolution)
     filename_base = pattern.format(
         date=date_str,
+        time=time_str,
         streamer=safe_name,
         title=safe_title,
         quality=display_quality,
@@ -105,7 +111,7 @@ async def trigger_recording(ch_id: str, platform: str, ch_name: str, extractor, 
         filename_base = filename_base[:200]
     
     if platform == "soop":
-        filename = f"{filename_base}_part{recorder.session_part}.webm"
+        filename = f"{filename_base}_part{recorder.session_part}.ts"
     elif platform == "youtube":
         # 유튜브는 yt-dlp로 직접 MP4 녹화 (리멕싱 불필요)
         filename = f"{filename_base}.mp4"
@@ -124,6 +130,25 @@ async def trigger_recording(ch_id: str, platform: str, ch_name: str, extractor, 
         cmd = [settings.YTDLP_PATH]
         cmd.extend(extractor.get_streamlink_args())
         cmd.extend(["-o", output_path, meta.get("stream_url", "")])
+    elif platform == "tiktok":
+        # 틱톡: 직접 HTTP 다운로드 (Streamlink 미지원)
+        stream_url = meta.get("stream_url", "")
+        if not stream_url:
+            logger.error(f"[TikTok][{ch_name}] 스트림 URL을 가져올 수 없습니다.")
+            return False
+        # ffmpeg로直接 스트림 다운로드 (.flv/.ts → .mp4 변환 포함)
+        cmd = [
+            settings.FFMPEG_PATH,
+            "-y",                          # 덮어쓰기
+            "-nostdin",                    # stdin 비활성화
+            "-headers", f"User-Agent: {settings.USER_AGENT}\r\n",
+            "-i", stream_url,              # TikTok 스트림 URL
+            "-c:v", "copy",                # 비디오 복사 (재인코딩 없이)
+            "-c:a", "copy",                # 오디오 복사
+            "-f", "mp4",                   # MP4 컨테이너로 출력
+            "-movflags", "+faststart",     # 웹 스트리밍 최적화
+            output_path
+        ]
     else:
         # 기타 플랫폼: Streamlink 커맨드 조립
         cmd = [settings.STREAMLINK_PATH]
@@ -144,18 +169,24 @@ async def check_all_channels():
         return
     
     async def _check_single(ch):
-        platform = ch.get("platform")
-        ch_id = ch.get("id")
+        from app.core.logger import trace_id
+        import uuid
+        
+        platform = ch.get("platform", "unknown")
+        ch_id = ch.get("id", "unknown")
         ch_name = ch.get("name", ch_id)
         
-        ExtClass = EXTRACTOR_MAP.get(platform)
-        if not ExtClass:
-            return
-            
-        cookies = get_platform_cookies(platform)
-        extractor = ExtClass(channel_id=ch_id, cookies=cookies)
+        short_id = str(uuid.uuid4())[:8]
+        new_trace_id = f"SCH-{platform.upper()}-{short_id}"
+        token = trace_id.set(new_trace_id)
         
         try:
+            ExtClass = EXTRACTOR_MAP.get(platform)
+            if not ExtClass:
+                return
+                
+            cookies = get_platform_cookies(platform)
+            extractor = ExtClass(channel_id=ch_id, cookies=cookies)
             is_live = await extractor.is_live()
             recorder = RecorderManager.get_instance(ch_id)
             
@@ -179,16 +210,18 @@ async def check_all_channels():
                 elif recorder.session_started_at:
                     logger.info(f"[{ch_name}] 채널 오프라인 확정. 세션을 종료하고 후처리를 진행합니다.")
                     if recorder.session_platform == "soop" and recorder.session_part > 0:
-                        from app.services.merger import process_soop_concat
+                        from app.worker.tasks import process_soop_concat_celery_task
                         safe_name = "".join(c for c in recorder.session_channel_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
                         base_filename = f"[{recorder.session_started_at.strftime('%y%m%d_%H%M')}] {safe_name}_{recorder.session_platform}"
                         streamer_dir = os.path.join(settings.OUTPUT_DIR, safe_name)
-                        asyncio.create_task(process_soop_concat(streamer_dir, base_filename, recorder.session_channel_name))
+                        process_soop_concat_celery_task.delay(streamer_dir, base_filename, recorder.session_channel_name)
                     
                     recorder.session_started_at = None
                     recorder.session_part = 0
                 
         except Exception as e:
             logger.error(f"[{ch_name}] 모니터링 중 오류 발생: {e}")
+        finally:
+            trace_id.reset(token)
 
     await asyncio.gather(*[_check_single(ch) for ch in active_channels], return_exceptions=True)
