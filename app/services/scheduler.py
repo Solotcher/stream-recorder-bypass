@@ -214,7 +214,12 @@ async def check_all_channels():
                         safe_name = "".join(c for c in recorder.session_channel_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
                         base_filename = f"[{recorder.session_started_at.strftime('%y%m%d_%H%M')}] {safe_name}_{recorder.session_platform}"
                         streamer_dir = os.path.join(settings.OUTPUT_DIR, safe_name)
-                        process_soop_concat_celery_task.delay(streamer_dir, base_filename, recorder.session_channel_name)
+                        try:
+                            process_soop_concat_celery_task.apply_async(args=[streamer_dir, base_filename, recorder.session_channel_name], expires=10)
+                        except Exception as e:
+                            logger.warning(f"[{recorder.session_channel_name}] Celery 연동 실패({e}), 로컬 비동기 단일 병합(Fallback)을 수행합니다.")
+                            from app.services.merger import process_soop_concat
+                            asyncio.create_task(process_soop_concat(streamer_dir, base_filename, recorder.session_channel_name))
                     
                     recorder.session_started_at = None
                     recorder.session_part = 0

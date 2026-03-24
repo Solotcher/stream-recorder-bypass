@@ -126,9 +126,16 @@ class RecorderManager:
                 import asyncio as _asyncio
                 _asyncio.create_task(upload_file(self.output_path, channel_name))
             elif self.session_platform != "soop":
-                await send_telegram_message(f"<b>{channel_name}</b> 녹화 종료. 백그라운드 워커(Celery)에서 후처리(Remuxing)를 시작합니다.")
                 from app.worker.tasks import process_remuxing_celery_task
-                process_remuxing_celery_task.delay(self.output_path, channel_name)
+                try:
+                    process_remuxing_celery_task.apply_async(args=[self.output_path, channel_name], expires=10)
+                    await send_telegram_message(f"<b>{channel_name}</b> 녹화 종료. 백그라운드 워커(Celery)에서 후처리(Remuxing)를 시작합니다.")
+                except Exception as e:
+                    logger.warning(f"[{channel_name}] Celery 연동 실패({e}), 로컬 비동기 병합(Fallback)을 시작합니다.")
+                    await send_telegram_message(f"<b>{channel_name}</b> 녹화 종료. 로컬 시스템에서 후처리(Remuxing)를 시작합니다.")
+                    from app.services.merger import process_remuxing
+                    import asyncio as _asyncio
+                    _asyncio.create_task(process_remuxing(self.output_path, channel_name))
             else:
                 await send_telegram_message(f"<b>{channel_name}</b> 녹화 파트({self.session_part}) 종료. 방종 대기 중...")
             
