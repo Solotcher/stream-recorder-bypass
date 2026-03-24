@@ -4,15 +4,18 @@ from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
-import json
-import logging
 from app.core.logger import logger
 from app.core.config import settings
 from app.utils.channel_db import get_all_channels
 from app.utils.cookie_manager import get_platform_cookies
 from app.utils.telegram_bot import send_error_alert
-from app.utils.stream_quality import resolve_best_quality, format_quality_display
 from app.services.recorder import RecorderManager
+from app.services.session_manager import SessionManager
+from app.commands.filename_generator import (
+    safe_text, resolve_display_quality, generate_filename, build_output_path
+)
+from app.commands.streamlink_builder import StreamlinkCommandBuilder
+from app.commands.ytdlp_builder import YtdlpCommandBuilder
 
 # Extractors
 from app.extractors.chzzk import ChzzkExtractor
@@ -31,16 +34,19 @@ EXTRACTOR_MAP = {
     "instagram": InstagramExtractor
 }
 
+# 플랫폼 → 커맨드 빌더 매핑
+YTDLP_PLATFORMS = {"youtube", "tiktok"}
+
 # 글로벌 스케줄러 인스턴스
 scheduler = AsyncIOScheduler()
 
+
 def init_scheduler():
-    """ FastAPI 시작 시 스케줄러 구동 """
+    """FastAPI 시작 시 스케줄러 구동"""
     if not scheduler.running:
         scheduler.start()
         logger.info("APScheduler 백그라운드 모니터링 모듈이 시작되었습니다.")
-        
-        # 30초마다 모니터링 (실서비스 시 30~60초 권장)
+
         scheduler.add_job(
             check_all_channels,
             trigger=IntervalTrigger(seconds=30),
@@ -49,103 +55,71 @@ def init_scheduler():
             replace_existing=True
         )
 
+
 def shutdown_scheduler():
-    """ FastAPI 종료 시 스케줄러 정리 """
+    """FastAPI 종료 시 스케줄러 정리"""
     if scheduler.running:
         scheduler.shutdown()
         logger.info("APScheduler가 안전하게 종료되었습니다.")
 
 async def trigger_recording(ch_id: str, platform: str, ch_name: str, extractor, recorder, meta, record_type: str = "scheduled", resolution: str = "best"):
-    """ 실제로 Streamlink 커맨드를 조립하고 녹화 프로세스를 실행하는 분리 로직 """
-    import shlex
-    
-    # 세션 시작/유지 처리 (분할 녹화 방지/병합 용도)
-    if not recorder.session_started_at:
-        recorder.session_started_at = datetime.now()
-        recorder.session_part = 1
-        recorder.session_platform = platform
-        recorder.session_channel_name = ch_name
-        recorder.session_title = meta.get("title", "")
-        recorder.session_category = meta.get("category", "")
-    else:
-        recorder.session_part += 1
+    """녹화 커맨드를 조립하고 프로세스를 실행합니다. (Command + SessionManager 적용)"""
 
-    # 파일명에 사용할 안전 문자 변환 함수
-    def _safe(text: str) -> str:
-        return "".join(c for c in text if c.isalnum() or c in (' ', '-', '_')).rstrip()
-
-    safe_name = _safe(ch_name)
-    safe_title = _safe(meta.get("title", "제목없음"))
-    date_str = recorder.session_started_at.strftime("%Y%m%d")
-    time_str = recorder.session_started_at.strftime("%H%M%S")
-    
-    # FILENAME_PATTERN을 사용하여 파일명 생성
-    pattern = settings.FILENAME_PATTERN
-    # best일 때 실제 해상도 조회 시도 (녹화 시작 전에 비동기로 조회)
-    actual_resolution = resolution
-    if resolution == "best":
-        try:
-            actual_resolution = await resolve_best_quality(
-                meta.get("stream_url", ""),
-                extractor.get_streamlink_args(),
-                platform=platform
-            )
-            logger.info(f"[{ch_name}] best → 실제 해상도 조회 결과: {actual_resolution}")
-        except Exception as e:
-            logger.warning(f"[{ch_name}] 실제 해상도 조회 실패, 폴백 적용: {e}")
-            actual_resolution = "best"
-    
-    # 화질 표기: 1080p60 → 1080P60, best → 최고화질
-    display_quality = format_quality_display(actual_resolution)
-    filename_base = pattern.format(
-        date=date_str,
-        time=time_str,
-        streamer=safe_name,
-        title=safe_title,
-        quality=display_quality,
-        platform=platform
+    # 세션 시작/유지 처리 (SessionManager에 위임)
+    session = SessionManager.start_session(
+        channel_id=ch_id,
+        platform=platform,
+        channel_name=ch_name,
+        meta=meta,
+        record_type=record_type,
     )
-    
-    # 파일명 길이 제한 (255바이트 - 확장자 여유분)
-    if len(filename_base) > 200:
-        filename_base = filename_base[:200]
-    
-    if platform == "soop":
-        filename = f"{filename_base}_part{recorder.session_part}.ts"
-    elif platform == "youtube":
-        # 유튜브는 yt-dlp로 직접 MP4 녹화 (리멕싱 불필요)
-        filename = f"{filename_base}.mp4"
+    # RecorderManager에도 핵심 속성 동기화 (후처리 분기에서 참조)
+    recorder.session_started_at = session.started_at
+    recorder.session_part = session.part
+    recorder.session_platform = session.platform
+    recorder.session_channel_name = session.channel_name
+    recorder.session_title = session.title
+    recorder.session_category = session.category
+
+    # 1) 화질 해석
+    display_quality = await resolve_display_quality(
+        resolution, meta.get("stream_url", ""),
+        extractor.get_streamlink_args(), platform, ch_name
+    )
+
+    # 2) 빌더 선택 및 확장자 결정
+    if platform in YTDLP_PLATFORMS:
+        builder = YtdlpCommandBuilder(platform, ch_id)
     else:
-        # 단일 파일 (트위치, 치지직) — .ts로 녹화 후 리멕싱으로 .mp4 변환
-        filename = f"{filename_base}.ts"
-        
-    # 스트리머별 폴더 생성
-    streamer_dir = os.path.join(settings.OUTPUT_DIR, safe_name)
-    os.makedirs(streamer_dir, exist_ok=True)
-    
-    output_path = os.path.join(streamer_dir, filename)
-    
-    if platform == "youtube":
-        # 유튜브: yt-dlp 커맨드 조립
-        cmd = [settings.YTDLP_PATH]
-        cmd.extend(extractor.get_streamlink_args())
-        cmd.extend(["-o", output_path, meta.get("stream_url", "")])
-    elif platform == "tiktok":
-        # TikTok FFmpeg 403 버그 회피: yt-dlp를 내부 레코더 모듈로 직접 사용
-        cmd = [
-            settings.YTDLP_PATH,
-            f"https://www.tiktok.com/@{ch_id}/live",
-            "--no-playlist",
-            "-o", output_path
-        ]
-    else:
-        # 기타 플랫폼: Streamlink 커맨드 조립
-        cmd = [settings.STREAMLINK_PATH]
-        cmd.extend(extractor.get_streamlink_args())
-        cmd.extend([meta.get("stream_url", ""), resolution, "-o", output_path])
-    
-    # 백그라운드 태스크로 시작
-    asyncio.create_task(recorder.start_record(cmd, output_path, safe_name, record_type))
+        builder = StreamlinkCommandBuilder()
+
+    extension = builder.get_output_extension()
+    is_soop = (platform == "soop")
+
+    # 3) 파일명 생성 및 출력 경로 결정
+    filename = generate_filename(
+        started_at=recorder.session_started_at,
+        channel_name=ch_name,
+        title=meta.get("title", ""),
+        display_quality=display_quality,
+        platform=platform,
+        extension=extension,
+        session_part=recorder.session_part,
+        is_soop=is_soop,
+    )
+    output_path = build_output_path(ch_name, filename)
+
+    # 4) 커맨드 조립 (빌더에 위임)
+    extra_args = extractor.get_streamlink_args()
+    cmd = builder.build_command(
+        stream_url=meta.get("stream_url", ""),
+        output_path=output_path,
+        resolution=resolution,
+        extra_args=extra_args,
+    )
+
+    # 5) 백그라운드 태스크로 녹화 시작
+    asyncio.create_task(recorder.start_record(cmd, output_path, safe_text(ch_name), record_type))
     return True
 
 async def check_all_channels():
@@ -196,22 +170,26 @@ async def check_all_channels():
             elif not is_live:
                 if recorder.is_recording:
                     logger.info(f"[{ch_name}] 방종 감지. 레코더 자체 안전 중지(EOF)를 대기합니다.")
-                elif recorder.session_started_at:
-                    logger.info(f"[{ch_name}] 채널 오프라인 확정. 세션을 종료하고 후처리를 진행합니다.")
-                    if recorder.session_platform == "soop" and recorder.session_part > 0:
-                        from app.worker.tasks import process_soop_concat_celery_task
-                        safe_name = "".join(c for c in recorder.session_channel_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
-                        base_filename = f"[{recorder.session_started_at.strftime('%y%m%d_%H%M')}] {safe_name}_{recorder.session_platform}"
-                        streamer_dir = os.path.join(settings.OUTPUT_DIR, safe_name)
-                        try:
-                            process_soop_concat_celery_task.apply_async(args=[streamer_dir, base_filename, recorder.session_channel_name], expires=10)
-                        except Exception as e:
-                            logger.warning(f"[{recorder.session_channel_name}] Celery 연동 실패({e}), 로컬 비동기 단일 병합(Fallback)을 수행합니다.")
-                            from app.services.merger import process_soop_concat
-                            asyncio.create_task(process_soop_concat(streamer_dir, base_filename, recorder.session_channel_name))
-                    
-                    recorder.session_started_at = None
-                    recorder.session_part = 0
+                else:
+                    session = SessionManager.get_session(ch_id)
+                    if session:
+                        logger.info(f"[{ch_name}] 채널 오프라인 확정. 세션을 종료하고 후처리를 진행합니다.")
+                        if session.platform == "soop" and session.part > 0:
+                            from app.worker.tasks import process_soop_concat_celery_task
+                            safe_name = safe_text(session.channel_name)
+                            base_filename = f"[{session.started_at.strftime('%y%m%d_%H%M')}] {safe_name}_{session.platform}"
+                            streamer_dir = os.path.join(settings.OUTPUT_DIR, safe_name)
+                            try:
+                                process_soop_concat_celery_task.apply_async(args=[streamer_dir, base_filename, session.channel_name], expires=10)
+                            except Exception as e:
+                                logger.warning(f"[{session.channel_name}] Celery 연동 실패({e}), 로컬 비동기 단일 병합(Fallback)을 수행합니다.")
+                                from app.services.merger import process_soop_concat
+                                asyncio.create_task(process_soop_concat(streamer_dir, base_filename, session.channel_name))
+
+                        # 세션 종료 (SessionManager + RecorderManager 양쪽 정리)
+                        SessionManager.end_session(ch_id)
+                        recorder.session_started_at = None
+                        recorder.session_part = 0
                 
         except Exception as e:
             logger.error(f"[{ch_name}] 모니터링 중 오류 발생: {e}")

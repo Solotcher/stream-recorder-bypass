@@ -42,6 +42,13 @@ async def lifespan(app: FastAPI):
     
     # Shutdown Events
     logger.info(f"{settings.APP_NAME} 종료 중...")
+    
+    # aiohttp 글로벌 세션 정리 (리소스 누수 방지)
+    from app.extractors.base_extractor import _global_session
+    if _global_session and not _global_session.closed:
+        await _global_session.close()
+        logger.info("aiohttp 글로벌 세션이 안전하게 종료되었습니다.")
+    
     shutdown_scheduler()
 
 def create_app() -> FastAPI:

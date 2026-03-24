@@ -8,7 +8,6 @@ from typing import Optional
 from app.core.config import settings
 from app.core.logger import logger
 from app.utils.telegram_bot import send_telegram_message, send_error_alert
-from app.services.merger import process_remuxing
 from app.utils.process_state import register_process, unregister_process
 from app.utils.event_bus import broadcast_event
 
@@ -92,7 +91,7 @@ class RecorderManager:
             self.process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+                stderr=subprocess.PIPE
             )
             
             # 프로세스 재시작(Live Reload)을 견디기 위한 PID 디스크 저장
@@ -108,36 +107,25 @@ class RecorderManager:
             
             # 프로세스 블로킹 대기를 비동기 스레드로 넘김
             def _wait_proc():
-                return self.process.wait()
+                _, stderr_output = self.process.communicate()
+                return self.process.returncode, stderr_output
                 
-            returncode = await asyncio.to_thread(_wait_proc)
+            returncode, stderr_bytes = await asyncio.to_thread(_wait_proc)
 
             # 정상 종료든, 에러든 여기까지 오면 종료된 것임
             logger.info(f"[{channel_name}] 녹화 프로세스 종료됨. Return Code: {returncode}")
+            if returncode != 0 and stderr_bytes:
+                stderr_text = stderr_bytes.decode('utf-8', errors='replace')[-1000:]
+                logger.warning(f"[{channel_name}] 프로세스 stderr: {stderr_text}")
 
-            # 후처리 트리거 분기
-            # SOOP: 방종 판단(scheduler) 시 일괄 병합(concat)하므로 단건 리먹싱 생략
-            # YouTube/TikTok: 직접 MP4로 녹화하므로 리먹싱 불필요
-            if self.session_platform in ("youtube", "tiktok"):
-                platform_name = "유튜브" if self.session_platform == "youtube" else "틱톡"
-                await send_telegram_message(f"<b>{channel_name}</b> {platform_name} 녹화 완료. (.mp4)")
-                # 클라우드 자동 업로드 트리거
-                from app.services.uploader import upload_file
-                import asyncio as _asyncio
-                _asyncio.create_task(upload_file(self.output_path, channel_name))
-            elif self.session_platform != "soop":
-                from app.worker.tasks import process_remuxing_celery_task
-                try:
-                    process_remuxing_celery_task.apply_async(args=[self.output_path, channel_name], expires=10)
-                    await send_telegram_message(f"<b>{channel_name}</b> 녹화 종료. 백그라운드 워커(Celery)에서 후처리(Remuxing)를 시작합니다.")
-                except Exception as e:
-                    logger.warning(f"[{channel_name}] Celery 연동 실패({e}), 로컬 비동기 병합(Fallback)을 시작합니다.")
-                    await send_telegram_message(f"<b>{channel_name}</b> 녹화 종료. 로컬 시스템에서 후처리(Remuxing)를 시작합니다.")
-                    from app.services.merger import process_remuxing
-                    import asyncio as _asyncio
-                    _asyncio.create_task(process_remuxing(self.output_path, channel_name))
-            else:
-                await send_telegram_message(f"<b>{channel_name}</b> 녹화 파트({self.session_part}) 종료. 방종 대기 중...")
+            # 후처리 디스패치 (Strategy 패턴 — post_processing.py에 위임)
+            from app.services.post_processing import dispatch_post_processing
+            await dispatch_post_processing(
+                output_path=self.output_path,
+                channel_name=channel_name,
+                platform=self.session_platform,
+                session_part=self.session_part,
+            )
             
         except asyncio.CancelledError:
             logger.info(f"[{channel_name}] 강제 종료(Cancelled) 요청 받음.")
