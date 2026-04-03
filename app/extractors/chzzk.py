@@ -1,4 +1,3 @@
-import aiohttp
 from typing import Dict, Any, Optional
 from app.extractors.base_extractor import BaseExtractor
 from app.core.logger import logger

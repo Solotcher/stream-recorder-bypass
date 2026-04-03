@@ -4,16 +4,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from app.core.config import settings
-from app.core.logger import logger
+from app.core.logger import logger, trace_id
 from app.api.endpoints import router as api_router
 from app.services.scheduler import init_scheduler, shutdown_scheduler
 import os
 import sys
 import asyncio
 import uuid
-from fastapi.responses import JSONResponse
-from fastapi.requests import Request
-from app.core.logger import trace_id
 
 # Windows 환경에서 subprocess (streamlink, ffmpeg) 비동기 실행 시 
 # NotImplementedError 가 발생하는 것을 막기 위해 ProactorEventLoop 강제 설정
@@ -24,6 +21,10 @@ if sys.platform == 'win32':
 async def lifespan(app: FastAPI):
     # Startup Events
     logger.info(f"{settings.APP_NAME} {settings.VERSION} 가 시작되었습니다.")
+    
+    # DB 테이블 초기화 (신규 모델 자동 생성 보장)
+    from app.db.session import init_db
+    init_db()
     
     # 외부 의존성(FFmpeg, Streamlink) 자동 감지 및 다운로드
     from app.utils.dependency_manager import check_all_dependencies
