@@ -28,6 +28,8 @@ async def lifespan(app: FastAPI):
     # 외부 의존성(FFmpeg, Streamlink) 자동 감지 및 다운로드
     from app.utils.dependency_manager import check_all_dependencies
     check_all_dependencies()
+    from app.utils.dependency_manager import schedule_background_updates
+    schedule_background_updates()
     
     # 서버 재부팅(Live Reload) 시 분실된 FFmpeg 프로세스(PID) 추적 및 메모리 부착
     from app.services.recorder import RecorderManager
@@ -35,7 +37,13 @@ async def lifespan(app: FastAPI):
         RecorderManager.restore_active_processes()
     except Exception as e:
         logger.error(f"프로세스 복구 실패: {e}")
-        
+
+    from app.services.session_manager import SessionManager
+    try:
+        SessionManager.restore_all_sessions()
+    except Exception as e:
+        logger.error(f"세션 복구 실패: {e}")
+    
     init_scheduler()
     
     yield
@@ -59,8 +67,12 @@ def create_app() -> FastAPI:
         lifespan=lifespan
     )
 
-    # CORS: 모든 오리진 허용 (내부 IP 및 다양한 환경 지원)
-    allowed_origins = ["*"]
+    # CORS: 환경변수로 제어 (기본값 *, 운영 시 도메인 지정 권장)
+    raw_origins = settings.ALLOWED_ORIGINS
+    if raw_origins.strip() == "*":
+        allowed_origins = ["*"]
+    else:
+        allowed_origins = [o.strip() for o in raw_origins.split(",") if o.strip()]
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
@@ -100,11 +112,13 @@ def create_app() -> FastAPI:
     async def global_exception_handler(request: Request, exc: Exception):
         err_msg = str(exc)
         logger.error(f"[Trace: {trace_id.get()}] 전역 예외 발생: {err_msg}")
+        # 운영 환경에서는 내부 에러 상세 숨김
+        display_message = err_msg if settings.DEBUG else "내부 서버 오류가 발생했습니다."
         return JSONResponse(
             status_code=500,
             content={
                 "code": "INTERNAL_SERVER_ERROR",
-                "message": err_msg,
+                "message": display_message,
                 "traceId": trace_id.get()
             }
         )

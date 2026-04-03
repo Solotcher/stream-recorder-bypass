@@ -6,8 +6,16 @@ from fastapi import APIRouter, HTTPException
 from app.core.logger import logger
 from app.utils.cookie_manager import parse_raw_cookie, update_platform_cookies, get_platform_cookies
 from app.api.schemas import CookieRequest, ConfigRequest
+from app.core.config import settings
 
 router = APIRouter()
+
+
+@router.get("/health")
+async def health_check():
+    """Docker 및 로드밸런서용 헬스 체크 엔드포인트"""
+    return {"status": "ok", "version": getattr(settings, "VERSION", "unknown")}
+
 
 
 @router.post("/cookies/{platform}")

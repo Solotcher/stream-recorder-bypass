@@ -1,0 +1,727 @@
+# Stream Recorder — 수석 아키텍트 종합 아키텍처 리뷰
+
+> **문서 버전**: v1.0 | **평가 일시**: 2026-03-25 | **평가 모델**: Antigravity (Claude 4 Sonnet)  
+> **MCP**: filesystem, Sequential Thinking, context7
+
+---
+
+## 1. 현재 상태 평가 및 기술 제안
+
+### 1.1 프로젝트 현황 요약
+
+| 항목 | 내용 |
+|------|------|
+| **지원 플랫폼** | 치지직, SOOP, 트위치, 유튜브, 틱톡, 인스타그램, Kick (7개) |
+| **백엔드** | FastAPI + APScheduler(30초 폴링) + SQLite(SQLAlchemy ORM) |
+| **분산 처리** | Celery + Redis 워커 큐 (Docker 환경) / 로컬 Fallback 듀얼 지원 |
+| **프론트엔드** | Vanilla JS SPA (ES Modules, Glassmorphism 다크테마) |
+| **배포** | Docker Compose 3컨테이너 (app + redis + celery_worker) |
+| **후처리** | FFmpeg remuxing/concat → rclone cloud upload |
+| **실시간성** | WebSocket 이벤트 + PID Re-attach 시스템 |
+
+### 1.2 잘된 점 (Strengths) ✅
+
+| # | 영역 | 평가 |
+|---|------|------|
+| 1 | **BaseExtractor 추상 클래스** | Strategy 패턴의 모범적 적용. 7개 플랫폼이 동일 인터페이스([is_live](file:///c:/Users/User/Documents/Study_n_Work/Stream%20Recorder/app/extractors/base_extractor.py#29-33), [get_metadata](file:///c:/Users/User/Documents/Study_n_Work/Stream%20Recorder/app/extractors/base_extractor.py#34-41), [get_channel_info](file:///c:/Users/User/Documents/Study_n_Work/Stream%20Recorder/app/extractors/base_extractor.py#42-49), [get_streamlink_args](file:///c:/Users/User/Documents/Study_n_Work/Stream%20Recorder/app/extractors/base_extractor.py#50-56))로 통일됨 |
+| 2 | **Celery ↔ Local Fallback 듀얼 패턴** | Docker 없이 로컬에서도 동작하는 유연한 아키텍처. `try...except`로 Celery 연결 실패 시 로컬 비동기로 자연스럽게 전환 |
+| 3 | **PID Re-attach 시스템** | `process_state.py` + `active_pids.json`으로 서버 재시작 내구성 확보. psutil을 활용한 OS 수준 프로세스 복구 |
+| 4 | **FFmpeg 무결성 검증** | [_verify_output_or_revert()](file:///c:/Users/User/Documents/Study_n_Work/Stream%20Recorder/app/services/merger.py#56-74)로 출력 파일 크기 검증 후 원본 보존. 데이터 안전 최우선 설계 |
+| 5 | **Trace ID 미들웨어** | 요청별 UUID 기반 추적. 스케줄러(`SCH-PLATFORM-uuid`)까지 확장. 관측성 기반 구축 완료 |
+| 6 | **merger.py 헬퍼 추출** | [_run_ffmpeg_async](file:///c:/Users/User/Documents/Study_n_Work/Stream%20Recorder/app/services/merger.py#20-55), [_verify_output_or_revert](file:///c:/Users/User/Documents/Study_n_Work/Stream%20Recorder/app/services/merger.py#56-74), [_handle_ffmpeg_error](file:///c:/Users/User/Documents/Study_n_Work/Stream%20Recorder/app/services/merger.py#75-81)로 DRY 원칙 달성 |
+
+### 1.3 보완해야 할 점 (Weaknesses) ⚠️
+
+| # | 심각도 | 영역 | 문제 | 영향 |
+|---|--------|------|------|------|
+| 1 | 🔴 HIGH | [channel_db.py](file:///c:/Users/User/Documents/Study_n_Work/Stream%20Recorder/app/utils/channel_db.py) | 매 함수마다 `SessionLocal()` 생성/해제. [get_db()](file:///c:/Users/User/Documents/Study_n_Work/Stream%20Recorder/app/db/session.py#25-32) DI 함수가 정의되어 있으나 미사용 | DB 커넥션 풀 비효율, 트랜잭션 경계 불명확 |
+| 2 | 🔴 HIGH | [RecorderManager](file:///c:/Users/User/Documents/Study_n_Work/Stream%20Recorder/app/services/recorder.py#15-179) | 녹화 상태가 클래스 변수(`_instances`)에만 존재. DB 미영속 | 서버 크래시 시 세션 메타 유실 |
+| 3 | 🟡 MED | [scheduler.py](file:///c:/Users/User/Documents/Study_n_Work/Stream%20Recorder/app/services/scheduler.py) | [trigger_recording()](file:///c:/Users/User/Documents/Study_n_Work/Stream%20Recorder/app/services/scheduler.py#58-150) 90줄 God Function. 세션관리+파일명생성+커맨드조립+프로세스시작이 한 함수에 혼재 | SRP 위반, 테스트 불가 |
+| 4 | 🟡 MED | [tasks.py](file:///c:/Users/User/Documents/Study_n_Work/Stream%20Recorder/app/worker/tasks.py) ↔ [merger.py](file:///c:/Users/User/Documents/Study_n_Work/Stream%20Recorder/app/services/merger.py) | Celery Task와 로컬 Fallback에서 **동일한 FFmpeg 로직이 이중 구현** ([resolve_ffmpeg_path](file:///c:/Users/User/Documents/Study_n_Work/Stream%20Recorder/app/worker/tasks.py#27-32) 중복 포함) | DRY 위반, 유지보수 비용 2배 |
+| 5 | 🟡 MED | [endpoints.py](file:///c:/Users/User/Documents/Study_n_Work/Stream%20Recorder/app/api/endpoints.py) | 모든 API(채널·쿠키·설정·녹화·VOD)가 단일 파일 280줄에 집중 | SRP 위반, 코드 탐색 비용 증가 |
+| 6 | 🟢 LOW | [base_extractor.py](file:///c:/Users/User/Documents/Study_n_Work/Stream%20Recorder/app/extractors/base_extractor.py) | `_global_session` aiohttp 세션이 lifespan shutdown에서 `close()` 미호출 | 리소스 누수 가능성 |
+| 7 | 🟢 LOW | [_fetch_json()](file:///c:/Users/User/Documents/Study_n_Work/Stream%20Recorder/app/extractors/base_extractor.py#63-88) | non-200 응답 시 빈 dict 반환 (Silent Failure) | 에러 원인 추적 어려움 |
+| 8 | 🟢 LOW | [recorder.py](file:///c:/Users/User/Documents/Study_n_Work/Stream%20Recorder/app/services/recorder.py) | subprocess stderr를 `DEVNULL`로 버림 | 녹화 실패 원인 파악 불가 |
+
+### 1.4 기술 제안 (3가지)
+
+#### 제안 A: Command Pattern for Recording Pipeline ⭐ **최우선 추천**
+
+```
+trigger_recording(90줄 God Function) → 분해
+├── FileNameGenerator      # FILENAME_PATTERN 기반 파일명 생성 전담
+├── SessionManager         # 세션 시작/종료/파트 관리 전담
+├── CommandBuilder(ABC)    # 플랫폼별 커맨드 조립 인터페이스
+│   ├── StreamlinkBuilder  # 치지직, 트위치, SOOP, 인스타그램
+│   └── YtdlpBuilder       # 유튜브, 틱톡
+└── RecorderManager        # 프로세스 실행만 담당
+```
+
+**추천 이유**: 당장의 SRP 위반을 해소하면서, 향후 새로운 플랫폼(예: 네이버 NOW, 카카오TV)을 추가할 때 **기존 코드 변경 없이 새 Builder만 추가**하면 됨 (OCP 준수).
+
+#### 제안 B: Repository Pattern + Unit of Work
+
+[channel_db.py](file:///c:/Users/User/Documents/Study_n_Work/Stream%20Recorder/app/utils/channel_db.py)의 Raw 세션 관리를 `ChannelRepository` 클래스로 캡슐화. FastAPI의 `Depends(get_db)`를 활용하여 요청 단위 트랜잭션 경계를 명확히 함.
+
+**효과**: DB 레이어 테스트 용이성 확보, Mock Repository 교체 가능.
+
+#### 제안 C: Event-Driven Post-Processing (Observer 패턴)
+
+현재: [recorder.py](file:///c:/Users/User/Documents/Study_n_Work/Stream%20Recorder/app/services/recorder.py)가 직접 `merger → uploader → telegram`을 순차 호출  
+제안: `event_bus.py`를 확장하여 **내부 이벤트**(`RecordingFinished`)를 발행하고, 각 구독자가 독립적으로 반응
+
+```python
+# 현재 (강한 결합)
+if platform in ("youtube", "tiktok"):
+    await send_telegram_message(...)
+    asyncio.create_task(upload_file(...))
+elif platform != "soop":
+    process_remuxing_celery_task.apply_async(...)
+
+# 제안 (약한 결합)
+await event_bus.emit("recording_finished", RecordingEvent(platform, path, name))
+# → RemuxingHandler, UploaderHandler, TelegramHandler 각각 자동 처리
+```
+
+**효과**: 새로운 후처리 단계(예: 썸네일 추출, DB 기록) 추가 시 기존 코드를 수정하지 않고 핸들러만 등록.
+
+---
+
+## 2. 확장된 아키텍처 및 뼈대 설계
+
+### 2.1 데이터 흐름 (Before → After)
+
+```mermaid
+graph TB
+    subgraph "현재 (As-Is)"
+        A1[Web UI] --> B1[endpoints.py<br>모놀리식 280줄]
+        B1 --> C1[channel_db.py<br>DB 직접 세션 관리]
+        B1 --> D1[scheduler.py<br>trigger_recording<br>God Function 90줄]
+        D1 --> E1[recorder.py<br>start_record + 후처리 직접 호출]
+        E1 -. 강한 결합 .-> F1[merger.py]
+        E1 -. 강한 결합 .-> G1[uploader.py]
+        E1 -. 강한 결합 .-> H1[telegram_bot.py]
+    end
+```
+
+```mermaid
+graph TB
+    subgraph "제안 (To-Be)"
+        A2[Web UI] --> B2[api/<br>channels·recordings·settings·vod]
+        B2 --> C2[ChannelRepository<br>DI 패턴 적용]
+        B2 --> D2[SessionManager<br>세션 상태 전담]
+        D2 --> E2[CommandBuilder<br>플랫폼별 커맨드 조립]
+        E2 --> F2[RecorderManager<br>프로세스 실행만 담당]
+        F2 --> G2[EventBus.emit<br>recording_finished]
+        G2 --> H2[RemuxingHandler]
+        G2 --> I2[UploaderHandler]
+        G2 --> J2[TelegramHandler]
+    end
+```
+
+### 2.2 확장 디렉토리 구조
+
+```
+app/
+├── api/                          # ⬇️ endpoints.py 분할
+│   ├── __init__.py               [NEW]  라우터 통합 모듈
+│   ├── channels.py               [NEW]  채널 CRUD (GET/POST/DELETE /channels)
+│   ├── recordings.py             [NEW]  녹화 제어 (/records/*)
+│   ├── settings.py               [NEW]  시스템 설정 + 쿠키 (/config, /cookies)
+│   ├── vod.py                    [NEW]  VOD 다운로드 (/vod/download)
+│   └── endpoints.py              [DELETE] 기존 파일 역할 종료
+│
+├── commands/                     [NEW]  Command Pattern 모듈
+│   ├── __init__.py
+│   ├── base.py                   [NEW]  CommandBuilder ABC
+│   ├── streamlink_builder.py     [NEW]  Streamlink 전용 빌더
+│   ├── ytdlp_builder.py          [NEW]  yt-dlp 전용 빌더
+│   └── filename_generator.py     [NEW]  FILENAME_PATTERN 기반 파일명 생성기
+│
+├── events/                       [NEW]  내부 이벤트 시스템
+│   ├── __init__.py
+│   ├── types.py                  [NEW]  이벤트 타입 정의 (dataclass)
+│   └── handlers.py               [NEW]  후처리/알림 이벤트 핸들러
+│
+├── repositories/                 [NEW]  Repository 패턴
+│   ├── __init__.py
+│   └── channel_repository.py     [NEW]  채널 DB CRUD 캡슐화
+│
+├── services/
+│   ├── session_manager.py        [NEW]  녹화 세션 상태 관리
+│   ├── recorder.py               [MODIFY] 커맨드 조립 로직 제거, CommandBuilder에 위임
+│   ├── scheduler.py              [MODIFY] trigger_recording 분해 → Builder/SessionManager 호출
+│   ├── merger.py                 [유지]  Celery Fallback 로컬 처리 유지
+│   ├── uploader.py               [유지]
+│   └── vod_downloader.py         [유지]
+│
+├── worker/
+│   └── tasks.py                  [MODIFY] merger.py의 핵심 함수를 래핑만 수행 (DRY)
+│
+├── core/                         [유지]
+├── db/                           [유지]
+├── extractors/                   [유지]
+├── utils/
+│   ├── channel_db.py             [MODIFY → DEPRECATE] → repositories/ 로 이관
+│   └── (나머지 유지)
+└── main.py                       [MODIFY] lifespan에 aiohttp 세션 정리 추가
+```
+
+---
+
+## 3. 모듈별 상세 명세 (Gemini 3.1 Pro 작업용)
+
+### 3.1 `app/commands/base.py` [NEW]
+
+```python
+"""
+Command Pattern 기반 녹화 커맨드 빌더 인터페이스.
+각 플랫폼(Streamlink/yt-dlp)이 이 인터페이스를 구현하여
+trigger_recording의 God Function을 분해합니다.
+"""
+from abc import ABC, abstractmethod
+from typing import List, Dict, Any
+
+
+class CommandBuilder(ABC):
+    """녹화 프로세스 실행을 위한 CLI 커맨드를 조립하는 추상 빌더"""
+    
+    @abstractmethod
+    def build_command(
+        self,
+        stream_url: str,
+        output_path: str,
+        resolution: str,
+        extra_args: List[str] = None
+    ) -> List[str]:
+        """
+        플랫폼별 녹화 커맨드(리스트 형태)를 조립하여 반환.
+        
+        Args:
+            stream_url: 스트림 원본 URL
+            output_path: 녹화 파일 저장 절대 경로
+            resolution: 화질 선호도 (best, 1080p60 등)
+            extra_args: 추가 인자 (쿠키, 인증 헤더 등)
+        
+        Returns:
+            subprocess.Popen에 전달할 커맨드 리스트
+        """
+        # TODO: Gemini 3.1 Pro 구현 - 반환 타입은 List[str]
+        pass
+
+    @abstractmethod
+    def get_output_extension(self) -> str:
+        """
+        이 빌더가 생성하는 녹화 파일의 확장자를 반환합니다.
+        예: '.ts' (Streamlink), '.mp4' (yt-dlp)
+        """
+        # TODO: Gemini 3.1 Pro 구현 - Streamlink → '.ts', yt-dlp → '.mp4'
+        pass
+
+    @abstractmethod
+    def needs_remuxing(self) -> bool:
+        """녹화 완료 후 리먹싱(.ts → .mp4)이 필요한지 여부"""
+        # TODO: Gemini 3.1 Pro 구현 - Streamlink → True, yt-dlp → False
+        pass
+```
+
+### 3.2 `app/commands/streamlink_builder.py` [NEW]
+
+```python
+"""
+Streamlink 기반 녹화 커맨드 빌더.
+대상 플랫폼: 치지직(Chzzk), 트위치(Twitch), SOOP, 인스타그램(Instagram)
+
+Integration Point: 
+  - 기존 scheduler.py L141-145의 Streamlink 커맨드 조립 로직을 이관
+  - 기존 각 Extractor의 get_streamlink_args() 결과를 extra_args로 수신
+"""
+from app.commands.base import CommandBuilder
+from app.core.config import settings
+
+
+class StreamlinkCommandBuilder(CommandBuilder):
+    
+    def build_command(self, stream_url, output_path, resolution, extra_args=None):
+        # TODO: Gemini 3.1 Pro 구현
+        # 1. settings.STREAMLINK_PATH를 기반 커맨드 시작
+        # 2. extra_args (get_streamlink_args() 결과)를 확장
+        # 3. [stream_url, resolution, "-o", output_path] 패턴으로 조립
+        # 참조: 기존 scheduler.py L141-145
+        pass
+
+    def get_output_extension(self):
+        return ".ts"
+
+    def needs_remuxing(self):
+        return True
+```
+
+### 3.3 `app/commands/ytdlp_builder.py` [NEW]
+
+```python
+"""
+yt-dlp 기반 녹화 커맨드 빌더.
+대상 플랫폼: 유튜브(YouTube), 틱톡(TikTok)
+
+Integration Point:
+  - 기존 scheduler.py L128-140의 유튜브/틱톡 커맨드 조립 로직을 이관
+  - YouTube는 extractor.get_streamlink_args() + stream_url 방식
+  - TikTok은 @핸들/live URL + --no-playlist 방식
+"""
+from app.commands.base import CommandBuilder
+from app.core.config import settings
+
+
+class YtdlpCommandBuilder(CommandBuilder):
+    
+    def __init__(self, platform: str, channel_id: str = ""):
+        self.platform = platform
+        self.channel_id = channel_id
+
+    def build_command(self, stream_url, output_path, resolution, extra_args=None):
+        # TODO: Gemini 3.1 Pro 구현
+        # 1. platform == "youtube" 분기: settings.YTDLP_PATH + extra_args + ["-o", output_path, stream_url]
+        # 2. platform == "tiktok" 분기: settings.YTDLP_PATH + [tiktok_url, "--no-playlist", "-o", output_path]
+        # 참조: 기존 scheduler.py L128-140
+        pass
+
+    def get_output_extension(self):
+        return ".mp4"
+
+    def needs_remuxing(self):
+        return False
+```
+
+### 3.4 `app/commands/filename_generator.py` [NEW]
+
+```python
+"""
+FILENAME_PATTERN 기반 녹화 파일명 생성기.
+기존 scheduler.py의 trigger_recording 내부에 산재된 파일명 로직을 일원화합니다.
+
+Integration Point:
+  - 기존 scheduler.py L73-111의 파일명 생성 로직 전체를 이관
+  - RecorderManager.session_started_at 활용 → SessionManager로 이관 예정
+"""
+from datetime import datetime
+from app.core.config import settings
+
+
+MAX_FILENAME_LENGTH = 200  # 파일 시스템 안전 길이 제한
+
+
+class FileNameGenerator:
+    
+    @staticmethod
+    def safe_text(text: str) -> str:
+        """파일명에 사용할 수 없는 문자를 제거합니다."""
+        # TODO: Gemini 3.1 Pro 구현
+        # 참조: 기존 scheduler.py L74-75의 _safe() 로직 이관
+        pass
+
+    @staticmethod
+    def generate(
+        pattern: str,
+        started_at: datetime,
+        streamer_name: str,
+        title: str,
+        quality: str,
+        platform: str,
+        part: int = 0,
+        is_soop: bool = False,
+        extension: str = ".ts"
+    ) -> str:
+        """
+        FILENAME_PATTERN에 변수를 치환하여 최종 파일명을 반환합니다.
+        
+        Returns:
+            확장자를 포함한 완전한 파일명 문자열
+        """
+        # TODO: Gemini 3.1 Pro 구현
+        # 1. date_str / time_str 생성 (started_at 기반)
+        # 2. pattern.format(date=, time=, streamer=, title=, quality=, platform=)
+        # 3. MAX_FILENAME_LENGTH 초과 시 절단
+        # 4. SOOP인 경우 _partN 접미사 추가
+        # 5. 확장자 결합 후 반환
+        # 참조: 기존 scheduler.py L77-120
+        pass
+```
+
+### 3.5 `app/services/session_manager.py` [NEW]
+
+```python
+"""
+녹화 세션의 생명주기를 관리하는 전담 서비스.
+기존 RecorderManager의 session_* 속성들과 trigger_recording의 세션 관리 로직을 통합합니다.
+
+Integration Point:
+  - 기존 RecorderManager.__init__의 session_* 속성 6개를 이관
+  - 기존 scheduler.py L62-71의 세션 시작/파트 관리 로직을 이관
+  - 기존 scheduler.py L200-214의 세션 종료/병합 트리거 로직을 이관
+"""
+from datetime import datetime
+from typing import Optional, Dict, Any
+from dataclasses import dataclass, field
+
+
+@dataclass
+class RecordingSession:
+    """단일 녹화 세션의 상태를 표현하는 데이터 클래스"""
+    channel_id: str
+    platform: str
+    channel_name: str
+    title: str = ""
+    category: str = ""
+    record_type: str = "scheduled"  # "manual" or "scheduled"
+    started_at: Optional[datetime] = None
+    part: int = 0
+
+
+class SessionManager:
+    """채널별 녹화 세션을 추적·관리하는 싱글턴 서비스"""
+    
+    _sessions: Dict[str, RecordingSession] = {}  # channel_id → RecordingSession
+    
+    @classmethod
+    def start_session(cls, channel_id: str, platform: str, channel_name: str, meta: Dict[str, Any], record_type: str = "scheduled") -> RecordingSession:
+        """새 세션을 시작하거나, 기존 세션의 파트를 증가시킵니다."""
+        # TODO: Gemini 3.1 Pro 구현
+        # 1. channel_id가 _sessions에 없으면 새 RecordingSession 생성 (started_at = now)
+        # 2. 이미 있으면 part += 1
+        # 참조: 기존 scheduler.py L62-71
+        pass
+
+    @classmethod
+    def end_session(cls, channel_id: str) -> Optional[RecordingSession]:
+        """세션을 종료하고 제거합니다. 종료된 세션 정보를 반환합니다."""
+        # TODO: Gemini 3.1 Pro 구현
+        # 참조: 기존 scheduler.py L213-214
+        pass
+
+    @classmethod
+    def get_session(cls, channel_id: str) -> Optional[RecordingSession]:
+        """현재 활성 세션을 조회합니다."""
+        # TODO: Gemini 3.1 Pro 구현
+        pass
+
+    @classmethod
+    def get_all_active_sessions(cls) -> Dict[str, RecordingSession]:
+        """모든 활성 세션 목록을 반환합니다. (API 응답용)"""
+        # TODO: Gemini 3.1 Pro 구현
+        pass
+```
+
+### 3.6 `app/events/types.py` [NEW]
+
+```python
+"""
+내부 이벤트 정의. 녹화 생명주기 이벤트를 dataclass로 표현합니다.
+
+Integration Point:
+  - 기존 event_bus.py의 broadcast_event(type, dict) 호출을 정형화된 이벤트 객체로 대체
+"""
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Optional
+
+
+@dataclass
+class RecordingStartedEvent:
+    channel_id: str
+    platform: str
+    channel_name: str
+    record_type: str  # "manual" or "scheduled"
+    output_path: str
+    started_at: datetime
+
+@dataclass
+class RecordingFinishedEvent:
+    channel_id: str
+    platform: str
+    channel_name: str
+    output_path: str
+    needs_remuxing: bool      # Streamlink → True, yt-dlp → False
+    is_soop_part: bool        # SOOP 분할 파트 여부
+    session_part: int         # 현재 파트 번호
+
+@dataclass
+class PostProcessingCompleteEvent:
+    channel_name: str
+    output_path: str
+    file_size_bytes: int
+    final_format: str         # "mp4", "ts" 등
+```
+
+### 3.7 `app/events/handlers.py` [NEW]
+
+```python
+"""
+이벤트 핸들러 등록 모듈.
+RecordingFinishedEvent 등의 이벤트를 구독하여 후처리를 독립적으로 수행합니다.
+
+Integration Point:
+  - 기존 recorder.py L118-140의 후처리 분기 로직을 핸들러로 분리
+  - main.py lifespan에서 핸들러 등록
+"""
+from app.events.types import RecordingFinishedEvent, PostProcessingCompleteEvent
+
+
+class RemuxingHandler:
+    """녹화 완료 이벤트를 수신하여 리먹싱을 수행"""
+    
+    async def handle(self, event: RecordingFinishedEvent):
+        # TODO: Gemini 3.1 Pro 구현
+        # 1. event.needs_remuxing이 True면 Celery → Fallback 패턴으로 리먹싱 실행
+        # 2. event.is_soop_part이 True면 병합(concat) 로직이 아닌 단건 종료 통보
+        # 참조: 기존 recorder.py L118-140
+        pass
+
+
+class UploaderHandler:
+    """후처리 완료 이벤트를 수신하여 클라우드 업로드"""
+    
+    async def handle(self, event: PostProcessingCompleteEvent):
+        # TODO: Gemini 3.1 Pro 구현
+        # 참조: 기존 recorder.py L125-127의 upload_file 호출
+        pass
+
+
+class TelegramNotificationHandler:
+    """녹화 시작/종료/후처리 완료 이벤트를 수신하여 텔레그램 알림"""
+    
+    async def handle_start(self, event):
+        # TODO: Gemini 3.1 Pro 구현
+        pass
+
+    async def handle_finish(self, event):
+        # TODO: Gemini 3.1 Pro 구현
+        pass
+```
+
+### 3.8 `app/api/__init__.py` [NEW] — 라우터 통합
+
+```python
+"""
+분할된 API 라우터를 통합하여 main.py에서 단일 import로 사용합니다.
+
+Integration Point:
+  - 기존 main.py L106의 `app.include_router(api_router, prefix="/api")` 유지
+  - endpoints.py의 모든 라우트를 4개 서브 모듈로 분산
+"""
+from fastapi import APIRouter
+from app.api.channels import router as channels_router
+from app.api.recordings import router as recordings_router
+from app.api.settings import router as settings_router
+from app.api.vod import router as vod_router
+
+router = APIRouter()
+
+# TODO: Gemini 3.1 Pro 구현
+# router.include_router(channels_router)   → 기존 endpoints.py의 /channels 관련
+# router.include_router(recordings_router) → 기존 endpoints.py의 /records/*, /channel/*/start|stop
+# router.include_router(settings_router)   → 기존 endpoints.py의 /config, /cookies
+# router.include_router(vod_router)        → 기존 endpoints.py의 /vod/download
+```
+
+### 3.9 `app/repositories/channel_repository.py` [NEW]
+
+```python
+"""
+Repository 패턴 기반 채널 DB 접근 계층.
+기존 channel_db.py의 함수형 DB 접근을 클래스 기반으로 캡슐화합니다.
+
+Integration Point:
+  - 기존 channel_db.py의 5개 함수를 메서드로 이관
+  - FastAPI의 Depends(get_db)를 활용하여 요청 단위 세션 관리
+  - 기존 코드에서 from app.utils.channel_db import xxx → from app.repositories import ChannelRepository
+"""
+from typing import List, Dict, Optional
+from sqlalchemy.orm import Session
+from app.db.models import Channel
+
+
+class ChannelRepository:
+    
+    def __init__(self, db: Session):
+        self.db = db
+    
+    def get_all(self) -> List[Dict]:
+        # TODO: Gemini 3.1 Pro 구현 - 기존 channel_db.get_all_channels() 이관
+        pass
+
+    def get_by_id(self, channel_id: str) -> Optional[Dict]:
+        # TODO: Gemini 3.1 Pro 구현 - 기존 channel_db.get_channel() 이관
+        pass
+
+    def add(self, channel_data: Dict) -> bool:
+        # TODO: Gemini 3.1 Pro 구현 - 기존 channel_db.add_channel() 이관
+        pass
+
+    def update(self, channel_id: str, updated_data: Dict) -> bool:
+        # TODO: Gemini 3.1 Pro 구현 - 기존 channel_db.update_channel() 이관
+        pass
+
+    def delete(self, channel_id: str) -> bool:
+        # TODO: Gemini 3.1 Pro 구현 - 기존 channel_db.delete_channel() 이관
+        pass
+```
+
+### 3.10 기존 파일 수정 명세
+
+#### [app/worker/tasks.py](file:///c:/Users/User/Documents/Study_n_Work/Stream%20Recorder/app/worker/tasks.py) [MODIFY]
+
+```python
+# 현재: 자체적으로 FFmpeg 로직을 재구현 (DRY 위반)
+# 변경: merger.py의 동기 래퍼로 전환
+
+@shared_task(name="tasks.process_remuxing")
+def process_remuxing_celery_task(input_path: str, channel_name: str):
+    # TODO: Gemini 3.1 Pro 구현
+    # merger.py의 process_remuxing을 asyncio.run()으로 호출하는 래퍼로 단순화
+    # 기존 tasks.py L63-109의 중복 FFmpeg 로직을 모두 삭제
+    # 단, Celery Worker 컨텍스트에서는 asyncio 이벤트 루프가 없으므로
+    # asyncio.run() 또는 동기 전용 merger 함수를 호출해야 함
+    pass
+```
+
+#### [app/main.py](file:///c:/Users/User/Documents/Study_n_Work/Stream%20Recorder/app/main.py) [MODIFY]
+
+```python
+# 변경 1: aiohttp 글로벌 세션 정리 추가
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # ... 기존 startup 로직 ...
+    yield
+    # Shutdown Events
+    from app.extractors.base_extractor import _global_session
+    if _global_session and not _global_session.closed:
+        await _global_session.close()
+    # TODO: Gemini 3.1 Pro 구현 - 이벤트 핸들러 등록/해제 추가
+```
+
+---
+
+## 4. Gemini 3.1 Pro를 위한 넥스트 스텝 프롬프트
+
+> 아래 단계를 **순차적으로** 수행하세요. 각 단계를 완료할 때마다 `work_log.md`에 기록하세요.
+
+---
+
+### Step 1: Command 모듈 신설 및 trigger_recording God Function 분해
+
+```
+[작업 지시]
+1. `app/commands/` 디렉토리를 생성하고 __init__.py를 추가하라.
+2. 위 명세의 base.py, streamlink_builder.py, ytdlp_builder.py, filename_generator.py 뼈대 파일을 생성하고 TODO 부분을 구현하라.
+3. 구현 시 기존 scheduler.py L58-149의 trigger_recording() 로직을 참조하여 정확히 동일하게 동작하도록 하라.
+4. scheduler.py에서 trigger_recording()을 리팩토링하여 CommandBuilder와 FileNameGenerator를 호출하도록 변경하라.
+5. 기존 Extractor의 get_streamlink_args() 인터페이스는 변경하지 마라.
+6. 단위 테스트: `pytest tests/test_filename_generator.py` — FILENAME_PATTERN, 파일명 길이 제한, SOOP 파트 접미사를 검증하라.
+
+[주의사항]
+- trigger_recording()의 기존 동작을 100% 보존해야 함 (회귀 방지)
+- settings.FILENAME_PATTERN 기본값: "{date}_{time}_{streamer}_{title}_{quality}"
+```
+
+---
+
+### Step 2: SessionManager 신설 및 RecorderManager 경량화
+
+```
+[작업 지시]
+1. 위 명세의 app/services/session_manager.py를 생성하고 TODO를 구현하라.
+2. RecorderManager에서 session_* 속성 6개 (started_at, part, platform, channel_name, title, category)를 SessionManager로 이관하라.
+3. scheduler.py의 check_all_channels() 내부에서 RecorderManager 대신 SessionManager를 참조하도록 변경하라.
+4. endpoints.py의 /records/active API에서 SessionManager.get_all_active_sessions()을 활용하라.
+
+[주의사항]
+- RecorderManager._instances는 프로세스 관리(PID, is_recording)만 남겨라
+- PID Re-attach 로직(restore_active_processes)은 SessionManager에도 연동하라
+```
+
+---
+
+### Step 3: endpoints.py 분할 (API 라우터 모듈화)
+
+```
+[작업 지시]
+1. app/api/ 디렉토리에 channels.py, recordings.py, settings.py, vod.py를 생성하라.
+2. 기존 endpoints.py의 라우트를 기능별로 각 파일에 이관하라:
+   - channels.py: GET/POST/DELETE /channels, POST /channel/{id}/start
+   - recordings.py: GET /records/active, POST /records/manual/start, POST /channel/{id}/stop
+   - settings.py: GET/POST /config, POST/GET /cookies/*
+   - vod.py: POST /vod/download
+3. app/api/__init__.py에서 include_router로 통합하라.
+4. main.py의 기존 import 경로를 수정하라.
+
+[주의사항]
+- 모든 API 경로(prefix)는 변경하지 마라
+- 기존 Pydantic 모델(ChannelCreateRequest 등)은 app/api/schemas.py로 통합 이관
+```
+
+---
+
+### Step 4: Repository 패턴 적용 (channel_db.py → ChannelRepository)
+
+```
+[작업 지시]
+1. app/repositories/channel_repository.py를 생성하고 위 명세의 TODO를 구현하라.
+2. 기존 channel_db.py의 함수형 접근을 ChannelRepository 클래스 메서드로 이관하라.
+3. 각 API 엔드포인트에서 FastAPI Depends(get_db)를 통해 ChannelRepository를 주입받도록 변경하라.
+4. scheduler.py에서 사용하는 get_all_channels()는 별도의 서비스 레이어 함수로 유지하되 내부적으로 ChannelRepository를 활용하도록 변경하라.
+
+[주의사항]
+- 기존 channel_db.py는 호환성을 위해 ChannelRepository의 래퍼로 잠시 유지 후 deprecation 처리
+- SQLAlchemy 세션이 Request 범위 안에서 열리고 닫히도록 보장하라
+```
+
+---
+
+### Step 5: Event-Driven 후처리 파이프라인 구축
+
+```
+[작업 지시]
+1. app/events/ 디렉토리를 생성하고 types.py, handlers.py를 구현하라.
+2. event_bus.py를 확장하여 내부 이벤트 구독/발행 메커니즘(EventBus.on(), EventBus.emit())을 추가하라.
+3. recorder.py의 start_record() 후처리 분기(L118-140)를 RecordingFinishedEvent 발행으로 대체하라.
+4. RemuxingHandler, UploaderHandler, TelegramNotificationHandler를 구현하라.
+5. main.py lifespan에서 핸들러를 등록하라.
+
+[주의사항]
+- 기존 WebSocket 브로드캐스트(broadcast_event)는 별도로 유지 (클라이언트 → 브라우저 전용)
+- 내부 이벤트 시스템은 서버 내부 모듈 간 통신 전용
+- Celery Fallback 패턴은 RemuxingHandler 내부에서 유지
+```
+
+---
+
+### Step 6: 리소스 정리 및 tasks.py DRY 개선
+
+```
+[작업 지시]
+1. main.py lifespan shutdown에 _global_session.close() 추가하라.
+2. tasks.py의 중복된 FFmpeg 로직(process_remuxing_celery_task, process_soop_concat_celery_task)을 merger.py의 동기 래퍼로 교체하라.
+3. resolve_ffmpeg_path() 중복을 제거하고 app/core/config.py 또는 utils에 단일 함수로 통합하라.
+4. recorder.py의 subprocess stderr를 PIPE으로 변경하고 로그에 기록하라.
+
+[검증 방법]
+- Docker Compose 환경에서 docker compose up -d --build 후 정상 동작 확인
+- 치지직 채널 1개 등록 후 녹화 → 후처리 → 텔레그램 알림 → 업로드까지 정상 영위되는지 수동 테스트
+```
+
+---
+
+## 부록: 우선순위 매트릭스
+
+| 단계 | 난이도 | 영향범위 | 회귀 위험 | 권장 순서 |
+|------|--------|----------|----------|----------|
+| Step 1 (Command) | ⭐⭐⭐ | scheduler.py | 중간 | **1순위** |
+| Step 2 (Session) | ⭐⭐ | recorder, scheduler, endpoints | 높음 | 2순위 |
+| Step 3 (API 분할) | ⭐ | endpoints, main | 낮음 | 3순위 |
+| Step 4 (Repository) | ⭐⭐ | channel_db, 전 API | 중간 | 4순위 |
+| Step 5 (Event) | ⭐⭐⭐⭐ | recorder, merger, uploader | 높음 | 5순위 |
+| Step 6 (정리) | ⭐ | tasks, main | 낮음 | **즉시** (독립 작업) |
+
+> [!IMPORTANT]
+> **Step 6은 독립 작업이므로 Step 1과 병행 가능합니다.** Step 5(Event-Driven)는 가장 파급력이 크므로 Step 1~4 완료 후 착수를 권장합니다.

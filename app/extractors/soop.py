@@ -27,38 +27,33 @@ class SoopExtractor(BaseExtractor):
             
             payload = f"bid={self.channel_id}"
             
-            async with aiohttp.ClientSession(headers=req_headers) as session:
-                async with session.post(url, data=payload, timeout=10) as response:
-                    if response.status == 200:
-                        # SOOP API는 text/html mimetype으로 JSON을 반환하므로 content_type=None 필수
-                        data = await response.json(content_type=None)
-                        channel = data.get("CHANNEL")
-                        
-                        # 응답 파싱 실패 (API 구조 변경 등)
-                        if not channel:
-                            logger.warning(f"SOOP API CHANNEL 응답 누락: {self.channel_id}")
-                            return {"status": "ERROR"}
-                            
-                        is_live = (channel.get("RESULT") == 1)
-                        
-                        if not is_live:
-                            return {"status": "CLOSE"}
-                            
-                        return {
-                            "title": channel.get("TITLE", "제목 없음"),
-                            "channel_name": channel.get("BJNICK", self.channel_id),
-                            "category": channel.get("CATE", ""),
-                            "status": "OPEN", 
-                            "stream_url": f"https://play.sooplive.co.kr/{self.channel_id}"
-                        }
-                    else:
-                        logger.warning(f"SOOP API 응답 에러 (Status {response.status}): {self.channel_id}")
-                        return {"status": "ERROR"}
+            data = await self._fetch_json(url, method="POST", headers=req_headers, data=payload, timeout=10)
+            
+            if not data:
+                logger.warning(f"SOOP API 응답 없음: {self.channel_id}")
+                return {"status": "ERROR"}
+            
+            channel = data.get("CHANNEL")
+            
+            if not channel:
+                logger.warning(f"SOOP API CHANNEL 응답 누락: {self.channel_id}")
+                return {"status": "ERROR"}
+                
+            is_live = (channel.get("RESULT") == 1)
+            
+            if not is_live:
+                return {"status": "CLOSE"}
+                
+            return {
+                "title": channel.get("TITLE", "제목 없음"),
+                "channel_name": channel.get("BJNICK", self.channel_id),
+                "category": channel.get("CATE", ""),
+                "status": "OPEN", 
+                "stream_url": f"https://play.sooplive.co.kr/{self.channel_id}"
+            }
         except Exception as e:
             logger.error(f"SOOP API 통신 실패: {str(e)}")
             return {"status": "ERROR"}
-
-        return {"status": "ERROR", "channel_name": self.channel_id}
 
     async def get_channel_info(self) -> Dict[str, Any]:
         """ SOOP 플레이어 API를 재활용하여 라이브 관계없이 닉네임 파싱 시도 """
@@ -71,13 +66,11 @@ class SoopExtractor(BaseExtractor):
             
             payload = f"bid={self.channel_id}"
             
-            async with aiohttp.ClientSession(headers=req_headers) as session:
-                async with session.post(url, data=payload, timeout=10) as response:
-                    if response.status == 200:
-                        data = await response.json(content_type=None)
-                        channel = data.get("CHANNEL")
-                        if channel:
-                            return {"channel_name": channel.get("BJNICK", self.channel_id)}
+            data = await self._fetch_json(url, method="POST", headers=req_headers, data=payload, timeout=10)
+            if data:
+                channel = data.get("CHANNEL")
+                if channel:
+                    return {"channel_name": channel.get("BJNICK", self.channel_id)}
         except Exception as e:
             logger.error(f"SOOP API 통신 실패 (채널조회): {str(e)}")
             

@@ -159,12 +159,6 @@ def ensure_streamlink() -> str:
     path = find_binary("streamlink", settings.STREAMLINK_PATH)
     if path:
         logger.info(f"✅ Streamlink 확인됨: {path}. 최신 버전으로 업데이트를 시도합니다...")
-        import subprocess
-        try:
-            subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", "streamlink", "--quiet"], check=False)
-            logger.info("🎉 Streamlink 업데이트 체크 완료.")
-        except Exception as e:
-            logger.warning(f"⚠️ Streamlink 업데이트 실패 (무시됨): {e}")
         return path
     
     logger.warning("⚠️ Streamlink를 찾을 수 없습니다. 'pip install streamlink'으로 설치해주세요.")
@@ -186,12 +180,6 @@ def ensure_ytdlp() -> str:
     path = find_binary("yt-dlp", settings.YTDLP_PATH)
     if path:
         logger.info(f"✅ yt-dlp 확인됨: {path}. 최신 버전으로 업데이트를 시도합니다...")
-        import subprocess
-        try:
-            subprocess.run([path, "-U"], capture_output=True, text=True, check=False)
-            logger.info("🎉 yt-dlp 업데이트 체크 완료.")
-        except Exception as e:
-            logger.warning(f"⚠️ yt-dlp 업데이트 실패 (무시됨): {e}")
         return path
     
     # 다운로드 시도
@@ -250,3 +238,29 @@ def check_all_dependencies():
     settings.YTDLP_PATH = ytdlp_path
     
     logger.info("🔧 의존성 검사 완료.")
+
+def _background_update_streamlink():
+    """백그라운드에서 streamlink 업데이트 시도 (실패해도 무시)"""
+    import subprocess
+    try:
+        subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", "streamlink", "--quiet"], check=False)
+        logger.info("🎉 Streamlink 업데이트 체크 완료.")
+    except Exception as e:
+        logger.warning(f"⚠️ Streamlink 업데이트 실패 (무시됨): {e}")
+
+def _background_update_ytdlp(path: str):
+    """백그라운드에서 yt-dlp 업데이트 시도 (실패해도 무시)"""
+    import subprocess
+    try:
+        subprocess.run([path, "-U"], capture_output=True, text=True, check=False)
+        logger.info("🎉 yt-dlp 업데이트 체크 완료.")
+    except Exception as e:
+        logger.warning(f"⚠️ yt-dlp 업데이트 실패 (무시됨): {e}")
+
+def schedule_background_updates():
+    """서버 시작 후 백그라운드에서 의존성 업데이트를 수행합니다."""
+    import threading
+    threading.Thread(target=_background_update_streamlink, daemon=True).start()
+    if settings.YTDLP_PATH and settings.YTDLP_PATH != "yt-dlp":
+        threading.Thread(target=_background_update_ytdlp, args=(settings.YTDLP_PATH,), daemon=True).start()
+

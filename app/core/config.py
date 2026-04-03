@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     
     # API 인증 키 (빈 문자열이면 인증 비활성화 = 개발 모드)
     API_KEY: str = os.getenv("API_KEY", "")
+
+    # CORS 허용 도메인 (쉼표 구분, 기본 전체 허용)
+    ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "*")
     
     # User-Agent 설정
     USER_AGENT: str = os.getenv("USER_AGENT", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")

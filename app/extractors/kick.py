@@ -13,6 +13,7 @@ class KickExtractor(BaseExtractor):
 
     def __init__(self, channel_id: str, cookies: Optional[Dict[str, str]] = None):
         super().__init__(channel_id, cookies)
+        self._cached_info = None
 
     async def _extract_with_ytdlp(self) -> dict:
         def extract():
@@ -36,13 +37,15 @@ class KickExtractor(BaseExtractor):
         return await asyncio.to_thread(extract)
 
     async def is_live(self) -> bool:
-        info = await self._extract_with_ytdlp()
-        if info and info.get("is_live"):
+        self._cached_info = await self._extract_with_ytdlp()
+        if self._cached_info and self._cached_info.get("is_live"):
             return True
+        self._cached_info = None
         return False
 
     async def get_metadata(self) -> Dict[str, Any]:
-        info = await self._extract_with_ytdlp()
+        info = self._cached_info or await self._extract_with_ytdlp()
+        self._cached_info = None  # 사용 후 초기화
         if not info or not info.get("is_live"):
             return {"status": "CLOSE", "channel_name": self.channel_id}
             

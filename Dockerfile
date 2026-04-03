@@ -28,5 +28,9 @@ COPY . .
 # FastAPI의 Uvicorn 웹 서버 기본 노출 포트
 EXPOSE 8000
 
+# 컨테이너 헬스 체크 (30초 간격으로 /api/health 확인)
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD curl -f http://localhost:8000/api/health || exit 1
+
 # 프로젝트 엔트리 포인트 (안정성 보장을 위해 표준 런타임 사용)
 CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

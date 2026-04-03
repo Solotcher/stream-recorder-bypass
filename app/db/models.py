@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean
+from sqlalchemy import Column, String, Boolean, DateTime, Integer
 from app.db.session import Base
 
 class Channel(Base):
@@ -9,3 +9,16 @@ class Channel(Base):
     name = Column(String, nullable=False, doc="스트리머 표시 닉네임")
     resolution = Column(String, default="best", doc="녹화 화질 선호도")
     is_active = Column(Boolean, default=True, doc="True일 때만 스케줄러가 모니터링 수행")
+
+class ActiveSession(Base):
+    __tablename__ = "active_sessions"
+    
+    channel_id = Column(String, primary_key=True)
+    platform = Column(String, nullable=False)
+    channel_name = Column(String, nullable=False)
+    title = Column(String, default="")
+    category = Column(String, default="")
+    record_type = Column(String, default="scheduled")
+    started_at = Column(DateTime, nullable=True)
+    part = Column(Integer, default=0)
+

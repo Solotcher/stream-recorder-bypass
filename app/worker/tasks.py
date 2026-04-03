@@ -35,28 +35,22 @@ def _sync_upload(file_path: str, channel_name: str):
 
 @shared_task(name="tasks.download_vod")
 def download_vod_celery_task(url: str, output_dir: str = settings.OUTPUT_DIR):
-    """VOD 다운로드 Celery Task (yt-dlp 직접 호출, 별도 래퍼 불필요)"""
-    logger.info(f"[Celery] VOD 다운로드 시작: {url}")
-    _sync_send_telegram(f"🎬 <b>VOD 다운로드 시작</b>\n- URL: {url}")
+    """VOD 다운로드 Celery Task. vod_downloader의 범용 빌더를 재사용합니다."""
+    from app.services.vod_downloader import _detect_platform, _build_vod_command
 
-    output_template = os.path.join(output_dir, "%(uploader)s", "VOD_%(title)s.%(ext)s")
-    cmd = [
-        settings.YTDLP_PATH,
-        "--no-playlist",
-        "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-        "-S", "vcodec:h264,res,acodec:m4a",
-        "--merge-output-format", "mp4",
-        "-o", output_template,
-        url
-    ]
+    platform = _detect_platform(url)
+    logger.info(f"[Celery] {platform} VOD 다운로드 시작: {url}")
+    _sync_send_telegram(f"🎬 <b>{platform} VOD 다운로드 시작</b>\n- URL: {url}")
+
+    cmd = _build_vod_command(url, output_dir, platform)
 
     try:
         proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
         if proc.returncode == 0:
-            logger.info(f"[Celery] VOD 다운로드 완료: {url}")
+            logger.info(f"[Celery] {platform} VOD 다운로드 완료: {url}")
             _sync_send_telegram(f"✅ <b>VOD 다운로드 완료</b>\n- URL: {url}\n서버 내 VOD 폴더에 저장되었습니다.")
         else:
-            logger.error(f"[Celery] VOD 다운로드 실패. Code: {proc.returncode}\n{proc.stderr[-1000:]}")
+            logger.error(f"[Celery] {platform} VOD 다운로드 실패. Code: {proc.returncode}\n{proc.stderr[-1000:]}")
             _sync_send_telegram(f"❌ <b>VOD 다운로드 에러</b>\n- URL: {url}\n다운로드 도중 에러가 발생했습니다.")
     except Exception as e:
         logger.error(f"[Celery] VOD 다운로드 예외 발생: {e}")

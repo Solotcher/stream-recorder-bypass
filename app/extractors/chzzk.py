@@ -17,37 +17,34 @@ class ChzzkExtractor(BaseExtractor):
         url = self.BASE_API_URL.format(self.channel_id)
         
         try:
-            async with aiohttp.ClientSession(headers=self.headers) as session:
-                async with session.get(url, timeout=10) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        content = data.get("content", {})
-                        if not content:
-                            return {"status": "CLOSE"}
-                            
-                        status = content.get("status", "CLOSE")
-                        title = content.get("liveTitle", "제목 없음")
-                        thumbnail = content.get("liveImageUrl", "")
-                        category = content.get("liveCategoryValue", "")
-                        
-                        # live-status API에는 채널명이 없으므로 별도 Channel API로 실제 닉네임 조회
-                        channel_name = self.channel_id
-                        try:
-                            info = await self.get_channel_info()
-                            channel_name = info.get("channel_name", self.channel_id)
-                        except Exception:
-                            pass
-                        
-                        return {
-                            "title": title,
-                            "channel_name": channel_name,
-                            "category": category,
-                            "status": status, 
-                            "thumbnail": thumbnail,
-                            "stream_url": f"https://chzzk.naver.com/live/{self.channel_id}"
-                        }
-                    else:
-                        logger.warning(f"Chzzk API 응답 에러 (Status {response.status}): {self.channel_id}")
+            data = await self._fetch_json(url, method="GET", timeout=10)
+            if not data:
+                return {"status": "CLOSE", "channel_name": self.channel_id}
+            
+            content = data.get("content", {})
+            if not content:
+                return {"status": "CLOSE"}
+                
+            status = content.get("status", "CLOSE")
+            title = content.get("liveTitle", "제목 없음")
+            thumbnail = content.get("liveImageUrl", "")
+            category = content.get("liveCategoryValue", "")
+            
+            channel_name = self.channel_id
+            try:
+                info = await self.get_channel_info()
+                channel_name = info.get("channel_name", self.channel_id)
+            except Exception:
+                pass
+            
+            return {
+                "title": title,
+                "channel_name": channel_name,
+                "category": category,
+                "status": status, 
+                "thumbnail": thumbnail,
+                "stream_url": f"https://chzzk.naver.com/live/{self.channel_id}"
+            }
         except Exception as e:
             logger.error(f"Chzzk API 통신 실패: {str(e)}")
             
@@ -57,16 +54,14 @@ class ChzzkExtractor(BaseExtractor):
         """ 치지직 채널 고유 정보(닉네임 등) 조회 """
         url = f"https://api.chzzk.naver.com/service/v1/channels/{self.channel_id}"
         try:
-            async with aiohttp.ClientSession(headers=self.headers) as session:
-                async with session.get(url, timeout=10) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        content = data.get("content", {})
-                        if content:
-                            return {
-                                "channel_name": content.get("channelName", self.channel_id),
-                                "thumbnail": content.get("channelImageUrl", "")
-                            }
+            data = await self._fetch_json(url, method="GET", timeout=10)
+            if data:
+                content = data.get("content", {})
+                if content:
+                    return {
+                        "channel_name": content.get("channelName", self.channel_id),
+                        "thumbnail": content.get("channelImageUrl", "")
+                    }
         except Exception as e:
             logger.error(f"Chzzk Channel API 통신 실패: {str(e)}")
             

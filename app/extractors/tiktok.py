@@ -15,6 +15,7 @@ class TikTokExtractor(BaseExtractor):
     def __init__(self, channel_id: str, cookies: Optional[Dict[str, str]] = None):
         super().__init__(channel_id, cookies)
         self.stream_url = None
+        self._cached_info = None
 
     def _get_cookies_file_path(self) -> Optional[str]:
         if not self.cookies:
@@ -51,17 +52,19 @@ class TikTokExtractor(BaseExtractor):
 
     async def is_live(self) -> bool:
         """TikTok 라이브 방송 중인지 확인합니다."""
-        info = await self._extract_with_ytdlp()
-        if info and info.get("is_live"):
-            self.stream_url = info.get("url")
+        self._cached_info = await self._extract_with_ytdlp()
+        if self._cached_info and self._cached_info.get("is_live"):
+            self.stream_url = self._cached_info.get("url")
             return True
+        self._cached_info = None
         return False
 
     async def get_metadata(self) -> Dict[str, Any]:
         """
         TikTok 라이브 스트림 메타데이터를 반환합니다.
         """
-        info = await self._extract_with_ytdlp()
+        info = self._cached_info or await self._extract_with_ytdlp()
+        self._cached_info = None  # 사용 후 초기화
         if not info or not info.get("is_live"):
             return {"status": "CLOSE", "channel_name": self.channel_id}
             

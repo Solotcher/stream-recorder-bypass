@@ -78,7 +78,7 @@ class BaseExtractor(ABC):
             
             async with session.request(method.upper(), url, **request_kwargs) as response:
                 if response.status == 200:
-                    return await response.json()
+                    return await response.json(content_type=None)
                 logger.warning(f"HTTP {response.status} from {url}")
         except asyncio.TimeoutError:
             logger.error(f"HTTP 통신 타임아웃 발생 ({url}) - {timeout}초 초과")
