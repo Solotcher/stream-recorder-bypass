@@ -24,6 +24,7 @@ from app.extractors.soop import SoopExtractor
 from app.extractors.youtube import YouTubeExtractor
 from app.extractors.tiktok import TikTokExtractor
 from app.extractors.instagram import InstagramExtractor
+from app.extractors.kick import KickExtractor
 
 EXTRACTOR_MAP = {
     "chzzk": ChzzkExtractor,
@@ -31,7 +32,8 @@ EXTRACTOR_MAP = {
     "soop": SoopExtractor,
     "youtube": YouTubeExtractor,
     "tiktok": TikTokExtractor,
-    "instagram": InstagramExtractor
+    "instagram": InstagramExtractor,
+    "kick": KickExtractor
 }
 
 # 플랫폼 → 커맨드 빌더 매핑

@@ -104,11 +104,12 @@ class SoopExtractor(BaseExtractor):
         """
         args = [
             "--ffmpeg-copyts",
-            "--stream-segment-timeout", "15",
-            "--stream-timeout", "60",
-            "--retry-streams", "5",
-            "--retry-open", "3",
+            "--stream-segment-timeout", "30",
+            "--stream-timeout", "120",
+            "--retry-streams", "10",
+            "--retry-open", "5",
             "--hls-live-restart",
+            "--hls-segment-stream-data",
             "--http-header", "Origin=https://play.sooplive.co.kr",
             "--http-header", "Referer=https://play.sooplive.co.kr/"
         ]

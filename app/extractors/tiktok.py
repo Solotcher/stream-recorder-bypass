@@ -16,6 +16,20 @@ class TikTokExtractor(BaseExtractor):
         super().__init__(channel_id, cookies)
         self.stream_url = None
 
+    def _get_cookies_file_path(self) -> Optional[str]:
+        if not self.cookies:
+            return None
+        import os
+        from app.core.config import settings
+        cookies_dir = settings.DATA_DIR
+        os.makedirs(cookies_dir, exist_ok=True)
+        cookie_path = os.path.join(cookies_dir, "tiktok_cookies.txt")
+        with open(cookie_path, "w", encoding="utf-8") as f:
+            f.write("# Netscape HTTP Cookie File\n")
+            for name, value in self.cookies.items():
+                f.write(f".tiktok.com\tTRUE\t/\tTRUE\t0\t{name}\t{value}\n")
+        return cookie_path
+
     async def _extract_with_ytdlp(self) -> dict:
         def extract():
             ydl_opts = {
@@ -24,6 +38,9 @@ class TikTokExtractor(BaseExtractor):
                 'no_warnings': True,
                 'extract_flat': False
             }
+            cookie_file = self._get_cookies_file_path()
+            if cookie_file:
+                ydl_opts['cookiefile'] = cookie_file
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 try:
                     return ydl.extract_info(f"https://www.tiktok.com/@{self.channel_id}/live", download=False)
@@ -71,7 +88,11 @@ class TikTokExtractor(BaseExtractor):
         return {"channel_name": self.channel_id}
 
     def get_streamlink_args(self) -> list:
-        return []
+        args = ["--no-playlist", "--socket-timeout", "15", "--retries", "10"]
+        cookie_file = self._get_cookies_file_path()
+        if cookie_file:
+            args.extend(["--cookies", cookie_file])
+        return args
     
     def get_download_url(self) -> Optional[str]:
         """라이브 스트림 URL을 반환합니다 (직접 다운로드용)."""

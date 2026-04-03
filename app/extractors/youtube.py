@@ -146,6 +146,11 @@ class YouTubeExtractor(BaseExtractor):
             "--socket-timeout", "15",
             "--retries", "10",
             "--fragment-retries", "10",
+            # 라이브 전용
+            "--live-from-start",
+            "--wait-for-video", "30-120",
+            "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best",
+            "--merge-output-format", "mp4",
         ]
 
         cookie_file = self._get_cookies_file_path()

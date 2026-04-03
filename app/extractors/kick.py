@@ -21,6 +21,12 @@ class KickExtractor(BaseExtractor):
                 'simulate': True,
                 'no_warnings': True,
             }
+            cookie_str = self.get_cookie_string()
+            if cookie_str:
+                ydl_opts['http_headers'] = {
+                    'Cookie': cookie_str,
+                    'User-Agent': self.headers.get("User-Agent", ""),
+                }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 try:
                     return ydl.extract_info(f"https://kick.com/{self.channel_id}", download=False)
@@ -47,16 +53,16 @@ class KickExtractor(BaseExtractor):
             "nickname": info.get("uploader", self.channel_id),
             "thumbnail_url": info.get("thumbnail", ""),
             "viewer_count": info.get("view_count", 0),
+            "stream_url": f"https://kick.com/{self.channel_id}",
         }
 
     async def get_channel_info(self) -> Dict[str, Any]:
         return {"channel_name": self.channel_id}
 
     def get_streamlink_args(self) -> list:
-        """Kick은 Streamlink 공식 플러그인이 내장되어 있으므로 기본 아규먼트를 이용합니다."""
-        args = [
-            f"https://kick.com/{self.channel_id}",
-            "best",
-            "--hls-live-restart"
+        """Kick 녹화용 Streamlink 부가 인자. URL과 quality는 CommandBuilder에서 주입."""
+        return [
+            "--hls-live-restart",
+            "--stream-timeout", "60",
+            "--retry-streams", "5",
         ]
-        return args

@@ -25,7 +25,7 @@ class YtdlpCommandBuilder(CommandBuilder):
         extra_args: Optional[List[str]] = None
     ) -> List[str]:
         if self.platform == "tiktok":
-            return self._build_tiktok_command(output_path)
+            return self._build_tiktok_command(output_path, extra_args)
 
         return self._build_youtube_command(stream_url, output_path, extra_args)
 
@@ -44,15 +44,21 @@ class YtdlpCommandBuilder(CommandBuilder):
         cmd.extend(["-o", output_path, stream_url])
         return cmd
 
-    def _build_tiktok_command(self, output_path: str) -> List[str]:
-        """틱톡: @핸들/live URL + --no-playlist"""
+    def _build_tiktok_command(
+        self,
+        output_path: str,
+        extra_args: Optional[List[str]] = None
+    ) -> List[str]:
+        """틱톡: @핸들/live URL + extractor 부가 인자(쿠키 등)"""
         tiktok_url = f"https://www.tiktok.com/@{self.channel_id}/live"
-        return [
+        cmd = [
             settings.YTDLP_PATH,
-            tiktok_url,
             "--no-playlist",
-            "-o", output_path
         ]
+        if extra_args:
+            cmd.extend(extra_args)
+        cmd.extend(["-o", output_path, tiktok_url])
+        return cmd
 
     def get_output_extension(self) -> str:
         return ".mp4"
