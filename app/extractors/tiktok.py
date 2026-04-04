@@ -7,9 +7,8 @@ import yt_dlp
 class TikTokExtractor(BaseExtractor):
     """
     TikTok Live 스트림 추출기.
-    
-    기존 웹페이지 스크래핑 방식이 막혔으므로, WAF 우회가 지속적으로 패치되는
-    yt-dlp 라이브러리를 직접 활용하여 JSON 메타데이터와 스트림 URL을 획득합니다.
+    yt-dlp 라이브러리를 활용하여 JSON 메타데이터와 스트림 URL을 획득하며, 
+    최신 WAF 우회 및 비동기 환경 충돌 방지 로직이 적용되어 있습니다.
     """
 
     def __init__(self, channel_id: str, cookies: Optional[Dict[str, str]] = None):
@@ -33,11 +32,18 @@ class TikTokExtractor(BaseExtractor):
 
     async def _extract_with_ytdlp(self) -> dict:
         def extract():
+            # [수정됨] 틱톡 봇 차단을 우회하고 HLS 404 에러를 피하기 위한 최신 옵션
             ydl_opts = {
                 'quiet': True,
                 'simulate': True,
                 'no_warnings': True,
-                'extract_flat': False
+                'extract_flat': False,
+                'format': 'best[ext=flv]/best', # HLS 오류 우회를 위해 FLV 포맷 강제 우선 적용
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                }
             }
             cookie_file = self._get_cookies_file_path()
             if cookie_file:
@@ -51,7 +57,6 @@ class TikTokExtractor(BaseExtractor):
         return await asyncio.to_thread(extract)
 
     async def is_live(self) -> bool:
-        """TikTok 라이브 방송 중인지 확인합니다."""
         self._cached_info = await self._extract_with_ytdlp()
         if self._cached_info and self._cached_info.get("is_live"):
             self.stream_url = self._cached_info.get("url")
@@ -60,11 +65,8 @@ class TikTokExtractor(BaseExtractor):
         return False
 
     async def get_metadata(self) -> Dict[str, Any]:
-        """
-        TikTok 라이브 스트림 메타데이터를 반환합니다.
-        """
         info = self._cached_info or await self._extract_with_ytdlp()
-        self._cached_info = None  # 사용 후 초기화
+        self._cached_info = None 
         if not info or not info.get("is_live"):
             return {"status": "CLOSE", "channel_name": self.channel_id}
             
@@ -81,7 +83,6 @@ class TikTokExtractor(BaseExtractor):
         }
 
     async def get_channel_info(self) -> Dict[str, Any]:
-        """채널 정보를 반환합니다."""
         info = await self._extract_with_ytdlp()
         if info:
             return {
@@ -97,24 +98,15 @@ class TikTokExtractor(BaseExtractor):
             args.extend(["--cookies", cookie_file])
         return args
     
-    def get_download_url(self) -> Optional[str]:
-        """라이브 스트림 URL을 반환합니다 (직접 다운로드용)."""
+    # [수정됨] RuntimeError 방지를 위해 비동기(async) 함수로 변경 및 로직 간소화
+    async def get_download_url(self) -> Optional[str]:
+        """라이브 스트림 URL을 반환합니다 (비동기 환경 대응)."""
         if self.stream_url:
             return self.stream_url
             
-        import asyncio
-        import concurrent.futures
-        
-        async def _get():
-            meta = await self.get_metadata()
-            return meta.get("stream_url", "")
-            
         try:
-            loop = asyncio.get_running_loop()
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                future = pool.submit(asyncio.run, _get())
-                return future.result(timeout=10)
-        except RuntimeError:
-            return asyncio.run(_get())
-        except Exception:
+            meta = await self.get_metadata()
+            return meta.get("stream_url", None)
+        except Exception as e:
+            logger.debug(f"[TikTok] download_url 추출 실패: {e}")
             return None
