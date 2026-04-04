@@ -10,17 +10,19 @@ export function parseChannelUrl(inputStr, fallbackPlatform) {
     let is_vod = false;
 
     // VOD 및 특정 영상 다운로드 전용 우회 (원본 URL 훼손 방지)
-    if (ch_id.includes("youtube.com/watch") || ch_id.includes("youtu.be") || ch_id.includes("youtube.com/shorts") ||
-        (ch_id.includes("sooplive.") && ch_id.split('/').length > 4) || ch_id.includes("afreecatv.com/")) {
-        if (ch_id.includes("youtube")) platform = "youtube";
-        if (ch_id.includes("sooplive") || ch_id.includes("afreecatv")) platform = "soop";
+    const isYoutubeVOD = ch_id.includes("youtube.com/watch") || ch_id.includes("youtu.be") || ch_id.includes("youtube.com/shorts");
+    const isSoopVOD = ch_id.includes("vod.sooplive.co.kr") || ch_id.includes("/vod/") || ch_id.includes("/vods/") || (ch_id.includes("sooplive.") && ch_id.includes("/player/"));
+    
+    if (isYoutubeVOD || isSoopVOD) {
+        if (isYoutubeVOD) platform = "youtube";
+        if (isSoopVOD) platform = "soop";
         return { platform, ch_id, is_vod: true };
     }
 
-    const chzzkMatch = inputStr.match(/(?:chzzk\.naver\.com\/live\/|chzzk\.naver\.com\/)([a-zA-Z0-9]+)/);
+    const chzzkMatch = inputStr.match(/(?:chzzk\.naver\.com\/live\/|chzzk\.naver\.com\/)([a-zA-Z0-9_.-]+)/);
     if (chzzkMatch) { platform = 'chzzk'; ch_id = chzzkMatch[1]; }
 
-    const soopMatch = inputStr.match(/(?:play\.sooplive\.co\.kr\/|bj\.afreecatv\.com\/)([a-zA-Z0-9_]+)/);
+    const soopMatch = inputStr.match(/(?:ch\.sooplive\.co\.kr\/|play\.sooplive\.co\.kr\/|sooplive\.co\.kr\/|bj\.afreecatv\.com\/)([a-zA-Z0-9_]+)/);
     if (soopMatch) { platform = 'soop'; ch_id = soopMatch[1]; }
 
     const twitchMatch = inputStr.match(/twitch\.tv\/([a-zA-Z0-9_]+)/);
@@ -29,7 +31,7 @@ export function parseChannelUrl(inputStr, fallbackPlatform) {
     const youtubeMatch = inputStr.match(/youtube\.com\/(?:@([a-zA-Z0-9_-]+)|channel\/([a-zA-Z0-9_-]+)|live\/([a-zA-Z0-9_-]+))/);
     if (youtubeMatch) { platform = 'youtube'; ch_id = youtubeMatch[1] || youtubeMatch[2] || youtubeMatch[3]; }
 
-    const tiktokMatch = inputStr.match(/tiktok\.com\/@([a-zA-Z0-9_.-]+)/);
+    const tiktokMatch = inputStr.match(/(?:tiktok\.com\/@|^@)([a-zA-Z0-9_.-]+)/);
     if (tiktokMatch) { platform = 'tiktok'; ch_id = tiktokMatch[1]; }
 
     // http가 없는 순수 ID 모드에서만 슬래시 컷팅 수행

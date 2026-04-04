@@ -13,6 +13,7 @@ class TikTokExtractor(BaseExtractor):
 
     def __init__(self, channel_id: str, cookies: Optional[Dict[str, str]] = None):
         super().__init__(channel_id, cookies)
+        self.channel_id = self.channel_id.lstrip('@')
         self.stream_url = None
         self._cached_info = None
 

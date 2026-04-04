@@ -31,7 +31,7 @@ class SoopExtractor(BaseExtractor):
             return "VOD", vod_match.group(1)
         
         # Live 패턴 검사 (예: play.sooplive.co.kr/bjid, station/bjid)
-        live_match = re.search(r'(?:play\.sooplive\.(?:co\.kr|com)/|station/)(\w+)', target)
+        live_match = re.search(r'(?:ch\.sooplive\.(?:co\.kr|com)/|play\.sooplive\.(?:co\.kr|com)/|sooplive\.(?:co\.kr|com)/|station/)(\w+)', target)
         if live_match:
             return "LIVE", live_match.group(1)
             
