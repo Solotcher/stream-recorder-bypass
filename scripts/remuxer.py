@@ -101,6 +101,20 @@ class RemuxWorker:
                 mp4_size = os.path.getsize(mp4_path) if os.path.exists(mp4_path) else 0
                 if mp4_size >= self.config.MIN_SIZE:
                     logger.info(f"리먹싱 성공 ({mp4_size // (1024*1024)}MB): {mp4_path}")
+                    
+                    # 텔레그램 완료 알림 전송
+                    try:
+                        import asyncio
+                        from app.utils.telegram_bot import send_telegram_message
+                        filename = os.path.basename(mp4_path)
+                        asyncio.run(send_telegram_message(
+                            f"🎬 <b>리먹싱(변환) 완료</b>\n\n"
+                            f"파일: <code>{filename}</code>\n"
+                            f"크기: <b>{mp4_size // (1024*1024)} MB</b>"
+                        ))
+                    except Exception as e:
+                        logger.error(f"완료 알림 전송 실패: {e}")
+
                     try:
                         os.remove(ts_path)
                         logger.info(f"원본 삭제: {ts_path}")
@@ -114,8 +128,20 @@ class RemuxWorker:
             else:
                 err_text = proc.stderr.decode('utf-8', errors='replace')[-500:]
                 logger.error(f"리먹싱 실패 (Code: {proc.returncode})\nStderr: {err_text}")
+                try:
+                    import asyncio
+                    from app.utils.telegram_bot import send_error_alert
+                    asyncio.run(send_error_alert(os.path.basename(ts_path), "remuxer 컨테이너", err_text))
+                except Exception:
+                    pass
         except subprocess.TimeoutExpired:
             logger.error(f"리먹싱 타임아웃 ({timeout}초 초과): {ts_path}")
+            try:
+                import asyncio
+                from app.utils.telegram_bot import send_error_alert
+                asyncio.run(send_error_alert(os.path.basename(ts_path), "remuxer 컨테이너", f"타임아웃 {timeout}초 초과"))
+            except Exception:
+                pass
         except Exception as e:
             logger.error(f"리먹싱 실행 중 예외: {str(e)}")
 
