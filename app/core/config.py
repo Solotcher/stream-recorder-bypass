@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", "")
 
     # FFmpeg / Streamlink / yt-dlp Path (시스템 환경 변수에 없으면 커스텀 경로 사용)
+    REMUXER_ENABLED: bool = False  # True면 Celery 리먹싱 스킵 (remuxer 컨테이너가 처리)
     FFMPEG_PATH: str = "ffmpeg"
     STREAMLINK_PATH: str = "streamlink"
     YTDLP_PATH: str = "yt-dlp"

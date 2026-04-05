@@ -46,6 +46,18 @@ class RemuxingHandler(PostProcessingHandler):
         platform: str,
         session_part: int = 0
     ) -> None:
+        from app.core.config import settings
+        if settings.REMUXER_ENABLED:
+            logger.info(
+                f"[{channel_name}] remuxer 컨테이너 활성화 상태. "
+                f"Celery 리먹싱을 스킵합니다. (파일: {output_path})"
+            )
+            await send_telegram_message(
+                f"<b>{channel_name}</b> 녹화 종료. "
+                f"remuxer 컨테이너에서 자동 후처리됩니다."
+            )
+            return
+
         from app.worker.tasks import process_remuxing_celery_task
 
         try:

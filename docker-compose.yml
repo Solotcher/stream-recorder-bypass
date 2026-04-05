@@ -19,6 +19,7 @@ services:
     environment:
       - TZ=Asia/Seoul
       - REDIS_URL=redis://redis:6379/0
+      - REMUXER_ENABLED=true
       # 아래 변수들은 컨테이너 내에서 `app.core.config.py`의 기본값을 오버라이드합니다.
       # - TELEGRAM_BOT_TOKEN=YOUR_TOKEN
       # - TELEGRAM_CHAT_ID=YOUR_CHAT_ID
@@ -48,3 +49,19 @@ services:
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - redis
+
+  remuxer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: stream-recorder-remuxer
+    restart: unless-stopped
+    command: ["python", "-u", "scripts/remuxer.py"]
+    volumes:
+      - ./output:/app/output
+    environment:
+      - TZ=Asia/Seoul
+      - REMUX_WATCH_DIR=/app/output
+      - REMUX_CONCURRENCY=2
+      - REMUX_RETRY_DELAY=300
+      - REMUX_STABLE_CHECK=30
