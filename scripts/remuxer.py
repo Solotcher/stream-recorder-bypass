@@ -81,9 +81,10 @@ class RemuxWorker:
             logger.warning(f"파일이 너무 작아 리먹싱 스킵 (크기: {file_size}): {ts_path}")
             return False
 
-        timeout = 300
-        if file_size > 10 * 1024 * 1024 * 1024:
-            timeout = 600
+        # 파일 크기에 비례한 동적 타임아웃 (GB당 120초 + 기본 300초)
+        # 예시: 1GB=420초, 10GB=1500초(25분), 20GB=2700초(45분), 30GB=3900초(65분)
+        file_size_gb = file_size / (1024 * 1024 * 1024)
+        timeout = 300 + int(file_size_gb * 120)
 
         logger.info(f"리먹싱 시작: {ts_path}")
         cmd = [

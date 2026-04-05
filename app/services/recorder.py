@@ -65,6 +65,18 @@ class RecorderManager:
         self.session_category = ""
         self.session_record_type = "scheduled"
 
+    def _reset_session_state(self):
+        """세션 관련 상태를 모두 초기화합니다."""
+        from app.services.session_manager import SessionManager
+        SessionManager.end_session(self.channel_id)
+        from app.utils.process_state import unregister_process
+        unregister_process(self.channel_id)
+        self.session_started_at = None
+        self.session_part = 0
+        self.session_title = ""
+        self.session_category = ""
+        self.output_path = ""
+
     async def start_record(self, cmd: list, output_path: str, channel_name: str, record_type: str = "scheduled"):
         """ FFmpeg 혹은 streamlink 프로세스를 실행 """
         if self.is_recording:
@@ -138,7 +150,7 @@ class RecorderManager:
         finally:
             self.is_recording = False
             self.process = None
-            unregister_process(self.channel_id)
+            self._reset_session_state()
             await broadcast_event("recording_stopped", {
                 "id": self.channel_id,
                 "name": channel_name
@@ -151,6 +163,7 @@ class RecorderManager:
             return
 
         logger.info(f"[{channel_name}] 녹화 프로세스 중지 요청")
+        self.is_recording = False  # 먼저 플래그를 내려 새 녹화 진입 허용
         self.process.terminate()
         
         def _wait_kill():
@@ -162,5 +175,8 @@ class RecorderManager:
                 
         await asyncio.to_thread(_wait_kill)
 
-        self.is_recording = False
+        self.process = None
+        
+        # 세션 상태 완전 리셋
+        self._reset_session_state()
         logger.info(f"[{channel_name}] 프로세스 강제 완전 종료")

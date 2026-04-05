@@ -132,5 +132,11 @@ async def stop_recording_manual(channel_id: str):
     recorder = RecorderManager.get_instance(channel_id)
     if recorder.is_recording:
         await recorder.stop_record("사용자 강제 종료")
-        await broadcast_event("recording_stopped", {"id": channel_id})
+    
+    # stop_record 내부에서 세션 정리가 완료되므로 별도 호출 불필요
+    # 단, is_recording=False인데 세션만 잔류하는 비정상 케이스 방어
+    from app.services.session_manager import SessionManager
+    SessionManager.end_session(channel_id)
+    
+    await broadcast_event("recording_stopped", {"id": channel_id})
     return {"status": "success"}

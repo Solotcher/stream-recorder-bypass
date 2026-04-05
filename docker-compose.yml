@@ -61,6 +61,8 @@ services:
       - ./output:/app/output
     environment:
       - TZ=Asia/Seoul
+      # OUTPUT_DIR과 동일한 컨테이너 내부 경로를 바라봄
+      # 호스트 경로를 변경하면 위 volumes만 수정하면 됨
       - REMUX_WATCH_DIR=/app/output
       - REMUX_CONCURRENCY=2
       - REMUX_RETRY_DELAY=300

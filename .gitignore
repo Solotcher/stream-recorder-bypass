@@ -36,11 +36,7 @@ tmp_*.py
 
 # 작업 기록 / 계획서 (개발용)
 work_log.md
-next_session_guide.md
-handover_document_for_next_agent.md
-NEXT_SESSION_TODO.md
-*_INSTRUCTIONS.md
-*plan*.md
+docs/plans/
 architecture_review.md.resolved
 migrate_env.py
 
