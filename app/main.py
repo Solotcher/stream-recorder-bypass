@@ -42,6 +42,15 @@ async def lifespan(app: FastAPI):
     from app.services.session_manager import SessionManager
     try:
         SessionManager.restore_all_sessions()
+        
+        # [추가] OS 프로세스에 없는 좀비 세션 삭제
+        active_sessions = SessionManager.get_all_active_sessions()
+        for ch_id, session in list(active_sessions.items()):
+            recorder = RecorderManager.get_instance(ch_id)
+            if not recorder.is_recording:
+                logger.warning(f"[{session.channel_name}] 프로세스 없는 좀비 세션 발견. 강제 파기합니다.")
+                SessionManager.end_session(ch_id)
+                
     except Exception as e:
         logger.error(f"세션 복구 실패: {e}")
     

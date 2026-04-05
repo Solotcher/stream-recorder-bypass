@@ -157,20 +157,34 @@ class RecorderManager:
             })
 
     async def stop_record(self, channel_name: str):
-        """ 실행 중인 FFmpeg 프로세스 강제 종료 """
+        """ 실행 중인 FFmpeg/Streamlink 프로세스와 모든 자식 노드 강제 종료 """
         if not self.is_recording or not self.process:
             logger.warning(f"[{channel_name}] 녹화 중이 아닙니다.")
             return
 
-        logger.info(f"[{channel_name}] 녹화 프로세스 중지 요청")
-        self.process.terminate()
+        logger.info(f"[{channel_name}] 녹화 프로레스 및 자식 프로세스 트리를 강제 종료합니다.")
         
         def _wait_kill():
+            import psutil
             try:
-                self.process.wait(timeout=5.0)
-            except subprocess.TimeoutExpired:
+                # 자식 프로세스까지 추적해서 모두 kill
+                parent = psutil.Process(self.process.pid)
+                children = parent.children(recursive=True)
+                for child in children:
+                    child.kill()
+                parent.kill()
+                parent.wait(timeout=5.0)
+            except psutil.NoSuchProcess:
+                pass
+            except Exception as e:
+                logger.warning(f"[{channel_name}] 프로세스 종료 중 예외: {e}")
+            
+            # 프로세스 트리 종료 후 안전장치
+            try:
                 self.process.kill()
                 self.process.wait()
+            except Exception:
+                pass
                 
         await asyncio.to_thread(_wait_kill)
 

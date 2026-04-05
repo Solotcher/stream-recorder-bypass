@@ -74,7 +74,6 @@ class ChzzkExtractor(BaseExtractor):
         """기존 2508d와 동일하게 FFmpeg Copy를 유도하는 커맨드 라인 인자 반환"""
         # streamlink --ffmpeg-copyts --ffmpeg-ffmpeg [경로] https://chzzk.naver.com/live/xxx best -o [경로]
         args = [
-            "--ffmpeg-copyts",
             "--stream-segment-timeout", "15",
             "--stream-segment-attempts", "12",
             "--hls-live-restart"

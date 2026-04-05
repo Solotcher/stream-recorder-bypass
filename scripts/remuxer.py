@@ -7,7 +7,7 @@ import subprocess
 import threading
 import queue
 from pathlib import Path
-from watchdog.observers import Observer
+from watchdog.observers.polling import PollingObserver as Observer
 from watchdog.events import FileSystemEventHandler
 
 # 환경변수 로딩
@@ -125,20 +125,18 @@ class RemuxWorker:
         if not self.running:
             return
             
-        with self.semaphore:
-            if not self.is_valid_target(ts_path):
-                self._clear_processing(ts_path)
-                return
-            if self.is_remuxed(ts_path):
-                self._clear_processing(ts_path)
-                return
+        if not self.is_valid_target(ts_path) or self.is_remuxed(ts_path):
+            self._clear_processing(ts_path)
+            return
             
-            if self.wait_stable(ts_path):
-                success = self.remux(ts_path)
-                if not success and self.running:
-                    logger.warning(f"리먹싱을 다시 시도하기 위해 큐에 추가: {ts_path}")
-                    self.retry_queue.put((time.time() + self.config.RETRY_DELAY, ts_path))
-                    
+        if self.wait_stable(ts_path):
+            with self.semaphore:
+                if self.running:
+                    success = self.remux(ts_path)
+                    if not success and self.running:
+                        logger.warning(f"리먹싱을 다시 시도하기 위해 큐에 추가: {ts_path}")
+                        self.retry_queue.put((time.time() + self.config.RETRY_DELAY, ts_path))
+                        
         self._clear_processing(ts_path)
         
     def _clear_processing(self, ts_path: str):
