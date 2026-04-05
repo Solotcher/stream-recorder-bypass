@@ -143,7 +143,6 @@ class SoopExtractor(BaseExtractor):
         --hls-live-reload, --retry-open 플래그를 포함하여 즉시 종료를 방지합니다.
         """
         args = [
-            "--ffmpeg-copyts",
             "--stream-segment-timeout", "30",
             "--stream-timeout", "120",
             "--retry-streams", "10",
