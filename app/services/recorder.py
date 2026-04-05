@@ -163,7 +163,6 @@ class RecorderManager:
             return
 
         logger.info(f"[{channel_name}] 녹화 프로세스 중지 요청")
-        self.is_recording = False  # 먼저 플래그를 내려 새 녹화 진입 허용
         self.process.terminate()
         
         def _wait_kill():
@@ -175,8 +174,4 @@ class RecorderManager:
                 
         await asyncio.to_thread(_wait_kill)
 
-        self.process = None
-        
-        # 세션 상태 완전 리셋
-        self._reset_session_state()
         logger.info(f"[{channel_name}] 프로세스 강제 완전 종료")
