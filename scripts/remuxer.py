@@ -9,6 +9,9 @@ import queue
 from pathlib import Path
 from watchdog.observers.polling import PollingObserver as Observer
 from watchdog.events import FileSystemEventHandler
+import json
+import urllib.request
+import urllib.error
 
 # 환경변수 로딩
 class RemuxConfig:
@@ -17,6 +20,9 @@ class RemuxConfig:
     RETRY_DELAY = int(os.environ.get("REMUX_RETRY_DELAY", "300"))
     STABLE_CHECK = int(os.environ.get("REMUX_STABLE_CHECK", "30"))
     MIN_SIZE = int(os.environ.get("REMUX_MIN_SIZE", "1024"))
+    # 텔레그램 알림 설정
+    TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 # [2026-04-05 13:00:00] [INFO] [remuxer] 형식의 로깅 설정
 logger = logging.getLogger("remuxer")
@@ -26,6 +32,48 @@ formatter = logging.Formatter("[%(asctime)s] [%(levelname)s] [remuxer] %(message
 handler.setFormatter(formatter)
 if not logger.handlers:
     logger.addHandler(handler)
+
+def send_telegram_notification(message: str) -> bool:
+    """remuxer 전용 텔레그램 알림 전송 (표준 라이브러리만 사용)"""
+    token = RemuxConfig.TELEGRAM_BOT_TOKEN
+    chat_id = RemuxConfig.TELEGRAM_CHAT_ID
+
+    if not token or not chat_id:
+        return False
+
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = json.dumps({
+        "chat_id": chat_id,
+        "text": message,
+        "parse_mode": "HTML"
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST"
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if resp.status == 200:
+                return True
+            logger.warning(f"텔레그램 응답 코드: {resp.status}")
+    except Exception as e:
+        logger.warning(f"텔레그램 알림 전송 실패 (무시): {e}")
+    return False
+
+def send_telegram_error(channel_name: str, context: str, error_msg: str):
+    """remuxer 전용 에러 알림 전송"""
+    safe_err = str(error_msg).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    msg = (
+        f"🚨 <b>시스템 에러 알림</b> 🚨\n\n"
+        f"채널명: <b>{channel_name}</b>\n"
+        f"발생위치: {context}\n"
+        f"오류내용:\n<code>{safe_err}</code>"
+    )
+    send_telegram_notification(msg)
 
 class RemuxWorker:
     def __init__(self, config: RemuxConfig):
@@ -103,17 +151,12 @@ class RemuxWorker:
                     logger.info(f"리먹싱 성공 ({mp4_size // (1024*1024)}MB): {mp4_path}")
                     
                     # 텔레그램 완료 알림 전송
-                    try:
-                        import asyncio
-                        from app.utils.telegram_bot import send_telegram_message
-                        filename = os.path.basename(mp4_path)
-                        asyncio.run(send_telegram_message(
-                            f"🎬 <b>리먹싱(변환) 완료</b>\n\n"
-                            f"파일: <code>{filename}</code>\n"
-                            f"크기: <b>{mp4_size // (1024*1024)} MB</b>"
-                        ))
-                    except Exception as e:
-                        logger.error(f"완료 알림 전송 실패: {e}")
+                    filename = os.path.basename(mp4_path)
+                    send_telegram_notification(
+                        f"🎬 <b>리먹싱(변환) 완료</b>\n\n"
+                        f"파일: <code>{filename}</code>\n"
+                        f"크기: <b>{mp4_size // (1024*1024)} MB</b>"
+                    )
 
                     try:
                         os.remove(ts_path)
@@ -128,20 +171,10 @@ class RemuxWorker:
             else:
                 err_text = proc.stderr.decode('utf-8', errors='replace')[-500:]
                 logger.error(f"리먹싱 실패 (Code: {proc.returncode})\nStderr: {err_text}")
-                try:
-                    import asyncio
-                    from app.utils.telegram_bot import send_error_alert
-                    asyncio.run(send_error_alert(os.path.basename(ts_path), "remuxer 컨테이너", err_text))
-                except Exception:
-                    pass
+                send_telegram_error(os.path.basename(ts_path), "remuxer 컨테이너", err_text)
         except subprocess.TimeoutExpired:
             logger.error(f"리먹싱 타임아웃 ({timeout}초 초과): {ts_path}")
-            try:
-                import asyncio
-                from app.utils.telegram_bot import send_error_alert
-                asyncio.run(send_error_alert(os.path.basename(ts_path), "remuxer 컨테이너", f"타임아웃 {timeout}초 초과"))
-            except Exception:
-                pass
+            send_telegram_error(os.path.basename(ts_path), "remuxer 컨테이너", f"타임아웃 {timeout}초 초과")
         except Exception as e:
             logger.error(f"리먹싱 실행 중 예외: {str(e)}")
 

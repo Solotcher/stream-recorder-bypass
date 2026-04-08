@@ -67,3 +67,6 @@ services:
       - REMUX_CONCURRENCY=2
       - REMUX_RETRY_DELAY=300
       - REMUX_STABLE_CHECK=30
+      # 리먹싱 완료/실패 시 텔레그램 알림 전송용
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
