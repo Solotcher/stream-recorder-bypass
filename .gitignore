@@ -37,6 +37,7 @@ tmp_*.py
 # 작업 기록 / 계획서 (개발용)
 work_log.md
 docs/plans/
+docs/handover*.md
 architecture_review.md.resolved
 migrate_env.py
 
