@@ -62,40 +62,81 @@ class SoopExtractor(BaseExtractor):
             req_headers["Referer"] = "https://play.sooplive.co.kr/"
             req_headers["Content-Type"] = "application/x-www-form-urlencoded"
             
-            payload = f"bid={self.channel_id}"
+            # player_type=html5, type=live 필수 파라미터 추가
+            payload = f"bid={self.channel_id}&bno=&type=live&player_type=html5"
             
             data = await self._fetch_json(url, method="POST", headers=req_headers, data=payload, timeout=10)
             
-            if not data:
-                logger.warning(f"SOOP API 응답 없음: {self.channel_id}")
-                return {"status": "ERROR"}
-            
-            channel = data.get("CHANNEL")
-            
-            if not channel:
-                logger.warning(f"SOOP API CHANNEL 응답 누락: {self.channel_id}")
-                return {"status": "ERROR"}
+            if data and data.get("CHANNEL"):
+                channel = data.get("CHANNEL")
+                is_live = (channel.get("RESULT") == 1)
                 
-            is_live = (channel.get("RESULT") == 1)
-            
-            if not is_live:
-                return {"status": "CLOSE"}
-                
-            return {
-                "title": channel.get("TITLE", "제목 없음"),
-                "channel_name": channel.get("BJNICK", self.channel_id),
-                "category": channel.get("CATE", ""),
-                "status": "OPEN", 
-                "stream_url": f"https://play.sooplive.co.kr/{self.channel_id}"
-            }
+                if is_live:
+                    return {
+                        "title": channel.get("TITLE", "제목 없음"),
+                        "channel_name": channel.get("BJNICK", self.channel_id),
+                        "category": channel.get("CATE", ""),
+                        "status": "OPEN", 
+                        "stream_url": f"https://play.sooplive.co.kr/{self.channel_id}"
+                    }
+                else:
+                    logger.info(f"[SOOP] API 결과 오프라인 감지 ({self.channel_id}) - HTML 폴백 조회로 교차 검증을 진행합니다.")
+            else:
+                logger.warning(f"[SOOP] API 응답 비정상 ({self.channel_id}) - HTML 폴백 조회로 교차 검증을 진행합니다.")
         except Exception as e:
-            logger.error(f"SOOP API 통신 실패: {str(e)}")
+            logger.error(f"[SOOP] API 통신 실패: {str(e)} - HTML 폴백 조회로 이동합니다.")
+
+        # HTML 스크레이핑 폴백
+        try:
+            play_url = f"https://play.sooplive.co.kr/{self.channel_id}"
+            html_headers = self.headers.copy()
+            html_headers["Origin"] = "https://play.sooplive.co.kr"
+            html_headers["Referer"] = "https://play.sooplive.co.kr/"
+            
+            html = await self._fetch_text(play_url, headers=html_headers, timeout=10)
+            if html:
+                # 1. 생방송 고유 번호(broad_no) 정규식 추출
+                broad_no_match = re.search(r'(?:var\s+szBroadNo\s*=\s*|broad_no\s*[:=]\s*)["\']?(\d+)["\']?', html)
+                if broad_no_match:
+                    broad_no = broad_no_match.group(1)
+                    logger.info(f"[SOOP] HTML 폴백 생방송 번호 감지 성공 ({self.channel_id}): broad_no={broad_no}")
+                    
+                    # 2. BJ 닉네임 정규식 추출
+                    nick_match = re.search(r'(?:var\s+szBjNick\s*=\s*)["\']?([^"\'\r\n;]+)["\']?', html)
+                    bj_nick = nick_match.group(1) if nick_match else self.channel_id
+                    
+                    # 3. 방송 제목 정규식 추출 (og:title)
+                    title_match = re.search(r'<meta\s+property=["\']og:title["\']\s+content=["\']([^"\']+)["\']', html)
+                    # og:title 포맷: "[LIVE] BJ닉네임 - 방송제목" 형태인 경우 분리
+                    title = "제목 없음"
+                    if title_match:
+                        raw_title = title_match.group(1)
+                        if " - " in raw_title:
+                            title = raw_title.split(" - ", 1)[-1]
+                        else:
+                            title = raw_title
+                            
+                    return {
+                        "title": title,
+                        "channel_name": bj_nick,
+                        "category": "",
+                        "status": "OPEN",
+                        "stream_url": play_url
+                    }
+                else:
+                    logger.info(f"[SOOP] HTML 폴백 broad_no 미검출 -> 방송 종료 상태 ({self.channel_id})")
+                    return {"status": "CLOSE"}
+            else:
+                logger.warning(f"[SOOP] HTML 폴백 응답 없음 ({self.channel_id})")
+                return {"status": "ERROR"}
+        except Exception as e:
+            logger.error(f"[SOOP] HTML 스크레이핑 폴백 실패: {str(e)}")
             return {"status": "ERROR"}
 
     async def get_channel_info(self) -> Dict[str, Any]:
-        """ SOOP 플레이어 API를 재활용하여 라이브 관계없이 닉네임 파싱 시도 """
+        """ SOOP 플레이어 API 및 HTML 폴백을 활용하여 라이브 관계없이 닉네임 파싱 시도 """
         
-        # VOD인 경우 채널명 조회 로직을 스킵하고 ID를 그대로 반환하거나 VOD API를 따로 찌르도록 처리할 수 있습니다.
+        # VOD인 경우 채널명 조회 로직을 스킵하고 ID를 그대로 반환합니다.
         if self.stream_type == "VOD":
             return {"channel_name": self.channel_id}
 
@@ -106,17 +147,28 @@ class SoopExtractor(BaseExtractor):
             req_headers["Referer"] = "https://play.sooplive.co.kr/"
             req_headers["Content-Type"] = "application/x-www-form-urlencoded"
             
-            payload = f"bid={self.channel_id}"
+            payload = f"bid={self.channel_id}&bno=&type=live&player_type=html5"
             
             data = await self._fetch_json(url, method="POST", headers=req_headers, data=payload, timeout=10)
-            if data:
+            if data and data.get("CHANNEL"):
                 channel = data.get("CHANNEL")
-                if channel:
-                    return {"channel_name": channel.get("BJNICK", self.channel_id)}
+                return {"channel_name": channel.get("BJNICK", self.channel_id)}
         except Exception as e:
-            logger.error(f"SOOP API 통신 실패 (채널조회): {str(e)}")
+            logger.warning(f"[SOOP] API 통신 실패 (채널조회): {str(e)} - HTML 폴백 시도")
+            
+        # HTML 스크레이핑 폴백으로 닉네임 획득 시도
+        try:
+            play_url = f"https://play.sooplive.co.kr/{self.channel_id}"
+            html = await self._fetch_text(play_url, timeout=10)
+            if html:
+                nick_match = re.search(r'(?:var\s+szBjNick\s*=\s*)["\']?([^"\'\r\n;]+)["\']?', html)
+                if nick_match:
+                    return {"channel_name": nick_match.group(1)}
+        except Exception as e:
+            logger.error(f"[SOOP] HTML 닉네임 파싱 실패: {str(e)}")
             
         return {"channel_name": self.channel_id}
+
 
     async def is_live(self) -> bool:
         meta = await self.get_metadata()
@@ -145,7 +197,7 @@ class SoopExtractor(BaseExtractor):
         args = [
             "--stream-segment-timeout", "30",
             "--stream-timeout", "120",
-            "--retry-streams", "10",
+            "--retry-streams", "15",
             "--retry-open", "5",
             "--hls-live-restart",
             "--hls-segment-stream-data",

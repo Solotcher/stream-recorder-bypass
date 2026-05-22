@@ -1,7 +1,10 @@
 import asyncio
+import random
+import re
 from typing import Dict, Any, Optional
 from app.extractors.base_extractor import BaseExtractor
 from app.core.logger import logger
+from app.core.config import settings
 import yt_dlp
 
 class TikTokExtractor(BaseExtractor):
@@ -33,7 +36,7 @@ class TikTokExtractor(BaseExtractor):
 
     async def _extract_with_ytdlp(self) -> dict:
         def extract():
-            # [수정됨] 틱톡 봇 차단을 우회하고 HLS 404 에러를 피하기 위한 최신 옵션
+            # 틱톡 봇 차단을 우회하고 HLS 404 에러를 피하기 위한 최신 옵션
             ydl_opts = {
                 'quiet': True,
                 'simulate': True,
@@ -46,9 +49,16 @@ class TikTokExtractor(BaseExtractor):
                     'Accept-Language': 'en-US,en;q=0.9',
                 }
             }
+            
+            # 틱톡 전용 또는 글로벌 프록시 적용
+            proxy_url = settings.TIKTOK_PROXY or settings.GLOBAL_PROXY
+            if proxy_url:
+                ydl_opts['proxy'] = proxy_url
+                
             cookie_file = self._get_cookies_file_path()
             if cookie_file:
                 ydl_opts['cookiefile'] = cookie_file
+                
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 try:
                     return ydl.extract_info(f"https://www.tiktok.com/@{self.channel_id}/live", download=False)
@@ -58,11 +68,54 @@ class TikTokExtractor(BaseExtractor):
         return await asyncio.to_thread(extract)
 
     async def is_live(self) -> bool:
+        # 1. 초경량 HTML 스크레이핑으로 라이브 상태 선감지
+        play_url = f"https://www.tiktok.com/@{self.channel_id}/live"
+        
+        headers = self.headers.copy()
+        # 모바일 UA 무작위 로테이션 적용
+        user_agents = [
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1",
+            "Mozilla/5.0 (iPad; CPU OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1",
+            "Mozilla/5.0 (Linux; Android 13; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36",
+            "Mozilla/5.0 (Linux; Android 13; Pixel 7 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36",
+        ]
+        headers["User-Agent"] = random.choice(user_agents)
+        headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+        headers["Accept-Language"] = "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
+        
+        cookie_str = self.get_cookie_string()
+        if cookie_str:
+            headers["Cookie"] = cookie_str
+            
+        proxy_url = settings.TIKTOK_PROXY or settings.GLOBAL_PROXY or None
+        
+        try:
+            # 틱톡 생방송 페이지 HTML 비동기 조회
+            html = await self._fetch_text(play_url, headers=headers, timeout=10, proxy=proxy_url)
+            if html:
+                # roomId 파싱 ("roomId":"71234567890" 또는 "roomId":"0")
+                # 또는 "status":4 (4=LIVE, 2=OFFLINE)
+                room_id_match = re.search(r'["\']roomId["\']\s*:\s*["\'](\d+)["\']', html)
+                status_match = re.search(r'["\']status["\']\s*:\s*(\d+)', html)
+                
+                is_room_active = room_id_match and room_id_match.group(1) != "0"
+                is_status_live = status_match and status_match.group(1) == "4"
+                
+                if is_room_active or is_status_live or "liveRoom" in html or '"status":4' in html:
+                    logger.info(f"[TikTok] 초경량 HTML 조회 생방송 감지 성공 (@{self.channel_id})")
+                    return True
+                
+                logger.debug(f"[TikTok] 초경량 HTML 조회 결과: 오프라인 (@{self.channel_id})")
+                return False
+        except Exception as e:
+            logger.error(f"[TikTok] 초경량 HTML 조회 에러: {e} - yt-dlp로 폴백하여 확인을 시도합니다.")
+            
+        # HTML 조회 실패 시 안전을 위해 기존 yt-dlp로 딱 한번 폴백 검증
         self._cached_info = await self._extract_with_ytdlp()
         if self._cached_info and self._cached_info.get("is_live"):
             self.stream_url = self._cached_info.get("url")
             return True
-        self._cached_info = None
+            
         return False
 
     async def get_metadata(self) -> Dict[str, Any]:
@@ -94,12 +147,17 @@ class TikTokExtractor(BaseExtractor):
 
     def get_streamlink_args(self) -> list:
         args = ["--no-playlist", "--socket-timeout", "15", "--retries", "10"]
+        
+        # 틱톡 전용 또는 글로벌 프록시 적용
+        proxy_url = settings.TIKTOK_PROXY or settings.GLOBAL_PROXY
+        if proxy_url:
+            args.extend(["--proxy", proxy_url])
+            
         cookie_file = self._get_cookies_file_path()
         if cookie_file:
             args.extend(["--cookies", cookie_file])
         return args
     
-    # [수정됨] RuntimeError 방지를 위해 비동기(async) 함수로 변경 및 로직 간소화
     async def get_download_url(self) -> Optional[str]:
         """라이브 스트림 URL을 반환합니다 (비동기 환경 대응)."""
         if self.stream_url:

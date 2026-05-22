@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from app.core.config import settings
-from app.core.logger import logger, trace_id
+from app.core.logger import logger, set_trace_id, get_trace_id, reset_trace_id
 from app.api.endpoints import router as api_router
 from app.services.scheduler import init_scheduler, shutdown_scheduler
 import os
@@ -91,18 +91,6 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Trace ID 미들웨어 추가
-    @app.middleware("http")
-    async def trace_id_middleware(request: Request, call_next):
-        req_trace_id = request.headers.get("X-Trace-Id", str(uuid.uuid4()))
-        token = trace_id.set(req_trace_id)
-        
-        response = await call_next(request)
-        response.headers["X-Trace-Id"] = req_trace_id
-        
-        trace_id.reset(token)
-        return response
-
     # API Key 인증 미들웨어 (설정에 API_KEY가 있을 때만 적용)
     @app.middleware("http")
     async def api_key_auth(request: Request, call_next):
@@ -113,15 +101,28 @@ def create_app() -> FastAPI:
                 return JSONResponse(status_code=401, content={
                     "code": "AUTH_REQUIRED",
                     "message": "Invalid or missing API Key",
-                    "traceId": trace_id.get()
+                    "traceId": get_trace_id()
                 })
         return await call_next(request)
+
+    # Trace ID 미들웨어 추가 (가장 먼저 실행되어야 하므로 하단에 선언)
+    @app.middleware("http")
+    async def trace_id_middleware(request: Request, call_next):
+        req_trace_id = request.headers.get("X-Trace-Id", f"API-{str(uuid.uuid4())}")
+        token = set_trace_id(req_trace_id)
+        
+        try:
+            response = await call_next(request)
+            response.headers["X-Trace-Id"] = req_trace_id
+            return response
+        finally:
+            reset_trace_id(token)
 
     # 범용 글로벌 예외 핸들러 등록
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
         err_msg = str(exc)
-        logger.error(f"[Trace: {trace_id.get()}] 전역 예외 발생: {err_msg}")
+        logger.error(f"[Trace: {get_trace_id()}] 전역 예외 발생: {err_msg}")
         # 운영 환경에서는 내부 에러 상세 숨김
         display_message = err_msg if settings.DEBUG else "내부 서버 오류가 발생했습니다."
         return JSONResponse(
@@ -129,7 +130,7 @@ def create_app() -> FastAPI:
             content={
                 "code": "INTERNAL_SERVER_ERROR",
                 "message": display_message,
-                "traceId": trace_id.get()
+                "traceId": get_trace_id()
             }
         )
 
@@ -142,7 +143,7 @@ def create_app() -> FastAPI:
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket):
         req_trace_id = f"WS-{str(uuid.uuid4())[:8]}"
-        token = trace_id.set(req_trace_id)
+        token = set_trace_id(req_trace_id)
         
         await ws_manager.connect(websocket)
         try:
@@ -155,7 +156,7 @@ def create_app() -> FastAPI:
             logger.error(f"WebSocket error: {e}")
             ws_manager.disconnect(websocket)
         finally:
-            trace_id.reset(token)
+            reset_trace_id(token)
 
     # 프론트엔드 정적 디렉토리 마운트
     frontend_dir = os.path.join(settings.BASE_DIR, "frontend")

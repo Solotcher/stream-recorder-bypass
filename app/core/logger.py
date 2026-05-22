@@ -6,6 +6,21 @@ import contextvars
 
 trace_id = contextvars.ContextVar("trace_id", default="-")
 
+def set_trace_id(value: str):
+    """현재 컨텍스트의 trace_id를 설정하고 reset 시 사용할 토큰을 반환합니다."""
+    return trace_id.set(value)
+
+def get_trace_id() -> str:
+    """현재 컨텍스트의 trace_id를 조회합니다."""
+    return trace_id.get()
+
+def reset_trace_id(token):
+    """이전 trace_id 컨텍스트 상태로 복구합니다."""
+    try:
+        trace_id.reset(token)
+    except Exception:
+        pass
+
 class TraceIdFilter(logging.Filter):
     def filter(self, record):
         record.trace_id = trace_id.get()

@@ -39,6 +39,15 @@ class Settings(BaseSettings):
     # User-Agent 설정
     USER_AGENT: str = os.getenv("USER_AGENT", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
+    # 프록시 설정
+    GLOBAL_PROXY: str = os.getenv("GLOBAL_PROXY", "")
+    TIKTOK_PROXY: str = os.getenv("TIKTOK_PROXY", "")
+    YOUTUBE_PROXY: str = os.getenv("YOUTUBE_PROXY", "")
+
+    # 유튜브 우회 토큰 설정
+    YOUTUBE_PO_TOKEN: str = os.getenv("YOUTUBE_PO_TOKEN", "")
+    YOUTUBE_VISITOR_DATA: str = os.getenv("YOUTUBE_VISITOR_DATA", "")
+
     class Config:
         env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data", ".env")
 

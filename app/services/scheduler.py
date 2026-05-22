@@ -82,6 +82,7 @@ async def trigger_recording(ch_id: str, platform: str, ch_name: str, extractor, 
     recorder.session_channel_name = session.channel_name
     recorder.session_title = session.title
     recorder.session_category = session.category
+    recorder.session_record_type = record_type
 
     # 1) 화질 해석
     display_quality = await resolve_display_quality(
@@ -124,78 +125,83 @@ async def trigger_recording(ch_id: str, platform: str, ch_name: str, extractor, 
     asyncio.create_task(recorder.start_record(cmd, output_path, safe_text(ch_name), record_type))
     return True
 
+
 async def check_all_channels():
     """ 주기적으로 호출되어 채널 상태를 모니터링하는 코어 태스크 (병렬 실행) """
-    logger.debug("[Scheduler] 등록된 채널들의 라이브 상태를 확인합니다...")
-    channels = get_all_channels()
-    
-    active_channels = [ch for ch in channels if ch.get("is_active", True)]
-    if not active_channels:
-        return
-    
-    async def _check_single(ch):
-        from app.core.logger import trace_id
-        import uuid
+    from app.core.logger import set_trace_id, reset_trace_id
+    clock_token = set_trace_id("SCH-GLOBAL-CLOCK")
+    try:
+        logger.debug("[Scheduler] 등록된 채널들의 라이브 상태를 확인합니다...")
+        channels = get_all_channels()
         
-        platform = ch.get("platform", "unknown")
-        ch_id = ch.get("id", "unknown")
-        ch_name = ch.get("name", ch_id)
+        active_channels = [ch for ch in channels if ch.get("is_active", True)]
+        if not active_channels:
+            return
         
-        short_id = str(uuid.uuid4())[:8]
-        new_trace_id = f"SCH-{platform.upper()}-{short_id}"
-        token = trace_id.set(new_trace_id)
-        
-        try:
-            ExtClass = EXTRACTOR_MAP.get(platform)
-            if not ExtClass:
-                return
-                
-            cookies = get_platform_cookies(platform)
-            extractor = ExtClass(channel_id=ch_id, cookies=cookies)
-            is_live = await extractor.is_live()
-            recorder = RecorderManager.get_instance(ch_id)
+        async def _check_single(ch):
+            from app.core.logger import set_trace_id, reset_trace_id
             
-            if is_live and not recorder.is_recording:
-                meta = await extractor.get_metadata()
-                resolution = ch.get("resolution", "best")
+            platform = ch.get("platform", "unknown")
+            ch_id = ch.get("id", "unknown")
+            ch_name = ch.get("name", ch_id)
+            
+            # 가독성 높은 Trace ID를 채널명 기반으로 조립
+            new_trace_id = f"SCH-{platform.upper()}-{safe_text(ch_name)}"
+            token = set_trace_id(new_trace_id)
+            
+            try:
+                ExtClass = EXTRACTOR_MAP.get(platform)
+                if not ExtClass:
+                    return
+                    
+                cookies = get_platform_cookies(platform)
+                extractor = ExtClass(channel_id=ch_id, cookies=cookies)
+                is_live = await extractor.is_live()
+                recorder = RecorderManager.get_instance(ch_id)
                 
-                # meta에서 가져온 실제 채널명이 있으면 우선 사용 (DB에 ID만 저장된 경우 대응)
-                real_name = meta.get("channel_name", ch_name)
-                if real_name and real_name != ch_id:
-                    ch_name = real_name
-                    # DB에도 실제 채널명을 영속화
-                    from app.utils.channel_db import update_channel
-                    update_channel(ch_id, {"name": ch_name})
-                
-                await trigger_recording(ch_id, platform, ch_name, extractor, recorder, meta, resolution=resolution)
-                
-            elif not is_live:
-                if recorder.is_recording:
-                    logger.info(f"[{ch_name}] 방종 감지. 레코더 자체 안전 중지(EOF)를 대기합니다.")
-                else:
-                    session = SessionManager.get_session(ch_id)
-                    if session:
-                        logger.info(f"[{ch_name}] 채널 오프라인 확정. 세션을 종료하고 후처리를 진행합니다.")
-                        if session.platform == "soop" and session.part > 0:
-                            from app.worker.tasks import process_soop_concat_celery_task
-                            safe_name = safe_text(session.channel_name)
-                            base_filename = f"[{session.started_at.strftime('%y%m%d_%H%M')}] {safe_name}_{session.platform}"
-                            streamer_dir = os.path.join(settings.OUTPUT_DIR, safe_name)
-                            try:
-                                process_soop_concat_celery_task.apply_async(args=[streamer_dir, base_filename, session.channel_name], expires=10)
-                            except Exception as e:
-                                logger.warning(f"[{session.channel_name}] Celery 연동 실패({e}), 로컬 비동기 단일 병합(Fallback)을 수행합니다.")
-                                from app.services.merger import process_soop_concat
-                                asyncio.create_task(process_soop_concat(streamer_dir, base_filename, session.channel_name))
-
-                        # 세션 종료 (SessionManager + RecorderManager 양쪽 정리)
-                        SessionManager.end_session(ch_id)
-                        recorder.session_started_at = None
-                        recorder.session_part = 0
-                
-        except Exception as e:
-            logger.error(f"[{ch_name}] 모니터링 중 오류 발생: {e}")
-        finally:
-            trace_id.reset(token)
-
-    await asyncio.gather(*[_check_single(ch) for ch in active_channels], return_exceptions=True)
+                if is_live and not recorder.is_recording:
+                    meta = await extractor.get_metadata()
+                    resolution = ch.get("resolution", "best")
+                    
+                    # meta에서 가져온 실제 채널명이 있으면 우선 사용 (DB에 ID만 저장된 경우 대응)
+                    real_name = meta.get("channel_name", ch_name)
+                    if real_name and real_name != ch_id:
+                        ch_name = real_name
+                        # DB에도 실제 채널명을 영속화
+                        from app.utils.channel_db import update_channel
+                        update_channel(ch_id, {"name": ch_name})
+                    
+                    await trigger_recording(ch_id, platform, ch_name, extractor, recorder, meta, resolution=resolution)
+                    
+                elif not is_live:
+                    if recorder.is_recording:
+                        logger.info(f"[{ch_name}] 방종 감지. 레코더 자체 안전 중지(EOF)를 대기합니다.")
+                    else:
+                        session = SessionManager.get_session(ch_id)
+                        if session:
+                            logger.info(f"[{ch_name}] 채널 오프라인 확정. 세션을 종료하고 후처리를 진행합니다.")
+                            if session.platform == "soop" and session.part > 0:
+                                from app.worker.tasks import process_soop_concat_celery_task
+                                safe_name = safe_text(session.channel_name)
+                                base_filename = f"[{session.started_at.strftime('%y%m%d_%H%M')}] {safe_name}_{session.platform}"
+                                streamer_dir = os.path.join(settings.OUTPUT_DIR, safe_name)
+                                try:
+                                    process_soop_concat_celery_task.apply_async(args=[streamer_dir, base_filename, session.channel_name], expires=10)
+                                except Exception as e:
+                                    logger.warning(f"[{session.channel_name}] Celery 연동 실패({e}), 로컬 비동기 단일 병합(Fallback)을 수행합니다.")
+                                    from app.services.merger import process_soop_concat
+                                    asyncio.create_task(process_soop_concat(streamer_dir, base_filename, session.channel_name))
+     
+                            # 세션 종료 (SessionManager + RecorderManager 양쪽 정리)
+                            SessionManager.end_session(ch_id)
+                            recorder.session_started_at = None
+                            recorder.session_part = 0
+                    
+            except Exception as e:
+                logger.error(f"[{ch_name}] 모니터링 중 오류 발생: {e}")
+            finally:
+                reset_trace_id(token)
+     
+        await asyncio.gather(*[_check_single(ch) for ch in active_channels], return_exceptions=True)
+    finally:
+        reset_trace_id(clock_token)

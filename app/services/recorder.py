@@ -76,116 +76,131 @@ class RecorderManager:
         self.session_title = ""
         self.session_category = ""
         self.output_path = ""
-
     async def start_record(self, cmd: list, output_path: str, channel_name: str, record_type: str = "scheduled"):
         """ FFmpeg 혹은 streamlink 프로세스를 실행 """
-        if self.is_recording:
-            logger.warning(f"[{channel_name}] 이미 녹화 중입니다.")
-            return
-
-        self.output_path = output_path
-        self.is_recording = True
-        self.session_record_type = record_type
-
-        logger.info(f"[{channel_name}] 녹화 프로세스 시작: {' '.join(shlex.quote(x) for x in cmd)}")
-        await send_telegram_message(f"<b>{channel_name}</b> 채널 라이브 감지. 녹화를 시작합니다.")
-        await broadcast_event("recording_started", {
-            "id": self.channel_id,
-            "platform": self.session_platform,
-            "name": channel_name,
-            "record_type": record_type
-        })
-
+        from app.core.logger import set_trace_id, reset_trace_id
+        
+        # 녹화 세션용 고유 Trace ID로 전환
+        new_trace_id = f"REC-{self.session_platform.upper()}-{channel_name}"
+        token = set_trace_id(new_trace_id)
+        
         try:
-            import subprocess
-            # uvicorn + asyncio 환경에서 Windows SelectorEventLoop 에러(NotImplementedError)를 회피하기 위해
-            # 표준 subprocess.Popen 과 asyncio.to_thread 조합을 사용합니다.
-            self.process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE
-            )
-            
-            # 프로세스 재시작(Live Reload)을 견디기 위한 PID 디스크 저장
-            meta_info = {
+            if self.is_recording:
+                logger.warning(f"[{channel_name}] 이미 녹화 중입니다.")
+                return
+
+            self.output_path = output_path
+            self.is_recording = True
+            self.session_record_type = record_type
+
+            logger.info(f"[{channel_name}] 녹화 프로세스 시작: {' '.join(shlex.quote(x) for x in cmd)}")
+            await send_telegram_message(f"<b>{channel_name}</b> 채널 라이브 감지. 녹화를 시작합니다.")
+            await broadcast_event("recording_started", {
+                "id": self.channel_id,
                 "platform": self.session_platform,
                 "name": channel_name,
-                "title": self.session_title,
-                "record_type": self.session_record_type,
-                "output_path": self.output_path,
-                "part": self.session_part
-            }
-            register_process(self.channel_id, self.process.pid, meta_info)
-            
-            # 프로세스 블로킹 대기를 비동기 스레드로 넘김
-            def _wait_proc():
-                _, stderr_output = self.process.communicate()
-                return self.process.returncode, stderr_output
-                
-            returncode, stderr_bytes = await asyncio.to_thread(_wait_proc)
-
-            # 정상 종료든, 에러든 여기까지 오면 종료된 것임
-            logger.info(f"[{channel_name}] 녹화 프로세스 종료됨. Return Code: {returncode}")
-            if returncode != 0 and stderr_bytes:
-                stderr_text = stderr_bytes.decode('utf-8', errors='replace')[-1000:]
-                logger.warning(f"[{channel_name}] 프로세스 stderr: {stderr_text}")
-
-            # 후처리 디스패치 (Strategy 패턴 — post_processing.py에 위임)
-            from app.services.post_processing import dispatch_post_processing
-            await dispatch_post_processing(
-                output_path=self.output_path,
-                channel_name=channel_name,
-                platform=self.session_platform,
-                session_part=self.session_part,
-            )
-            
-        except asyncio.CancelledError:
-            logger.info(f"[{channel_name}] 강제 종료(Cancelled) 요청 받음.")
-            
-        except Exception as e:
-            import traceback
-            tb_str = traceback.format_exc()
-            logger.error(f"[{channel_name}] 프로세스 실행 중 예외: {e}\n{tb_str}")
-            await send_error_alert(channel_name, "레코딩 프로세스(FFmpeg/Streamlink) 루프", str(e))
-        finally:
-            self.is_recording = False
-            self.process = None
-            self._reset_session_state()
-            await broadcast_event("recording_stopped", {
-                "id": self.channel_id,
-                "name": channel_name
+                "record_type": record_type
             })
 
+            try:
+                import subprocess
+                # uvicorn + asyncio 환경에서 Windows SelectorEventLoop 에러(NotImplementedError)를 회피하기 위해
+                # 표준 subprocess.Popen 과 asyncio.to_thread 조합을 사용합니다.
+                self.process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE
+                )
+                
+                # 프로세스 재시작(Live Reload)을 견디기 위한 PID 디스크 저장
+                meta_info = {
+                    "platform": self.session_platform,
+                    "name": channel_name,
+                    "title": self.session_title,
+                    "record_type": self.session_record_type,
+                    "output_path": self.output_path,
+                    "part": self.session_part
+                }
+                register_process(self.channel_id, self.process.pid, meta_info)
+                
+                # 프로세스 블로킹 대기를 비동기 스레드로 넘김
+                def _wait_proc():
+                    _, stderr_output = self.process.communicate()
+                    return self.process.returncode, stderr_output
+                    
+                returncode, stderr_bytes = await asyncio.to_thread(_wait_proc)
+
+                # 정상 종료든, 에러든 여기까지 오면 종료된 것임
+                logger.info(f"[{channel_name}] 녹화 프로세스 종료됨. Return Code: {returncode}")
+                if returncode != 0 and stderr_bytes:
+                    stderr_text = stderr_bytes.decode('utf-8', errors='replace')[-1000:]
+                    logger.warning(f"[{channel_name}] 프로세스 stderr: {stderr_text}")
+
+                # 후처리 디스패치 (Strategy 패턴 — post_processing.py에 위임)
+                from app.services.post_processing import dispatch_post_processing
+                await dispatch_post_processing(
+                    output_path=self.output_path,
+                    channel_name=channel_name,
+                    platform=self.session_platform,
+                    session_part=self.session_part,
+                )
+                
+            except asyncio.CancelledError:
+                logger.info(f"[{channel_name}] 강제 종료(Cancelled) 요청 받음.")
+                
+            except Exception as e:
+                import traceback
+                tb_str = traceback.format_exc()
+                logger.error(f"[{channel_name}] 프로세스 실행 중 예외: {e}\n{tb_str}")
+                await send_error_alert(channel_name, "레코딩 프로세스(FFmpeg/Streamlink) 루프", str(e))
+            finally:
+                self.is_recording = False
+                self.process = None
+                self._reset_session_state()
+                await broadcast_event("recording_stopped", {
+                    "id": self.channel_id,
+                    "name": channel_name
+                })
+        finally:
+            reset_trace_id(token)
     async def stop_record(self, channel_name: str):
         """ 실행 중인 FFmpeg/Streamlink 프로세스와 모든 자식 노드 강제 종료 """
-        if not self.is_recording or not self.process:
-            logger.warning(f"[{channel_name}] 녹화 중이 아닙니다.")
-            return
-
-        logger.info(f"[{channel_name}] 녹화 프로레스 및 자식 프로세스 트리를 강제 종료합니다.")
+        from app.core.logger import set_trace_id, reset_trace_id
         
-        def _wait_kill():
-            import psutil
-            try:
-                # 자식 프로세스까지 추적해서 모두 kill
-                parent = psutil.Process(self.process.pid)
-                children = parent.children(recursive=True)
-                for child in children:
-                    child.kill()
-                parent.kill()
-                parent.wait(timeout=5.0)
-            except psutil.NoSuchProcess:
-                pass
-            except Exception as e:
-                logger.warning(f"[{channel_name}] 프로세스 종료 중 예외: {e}")
-            
-            # 프로세스 트리 종료 후 안전장치
-            try:
-                self.process.kill()
-                self.process.wait()
-            except Exception:
-                pass
-                
-        await asyncio.to_thread(_wait_kill)
+        # 중지 세션용 고유 Trace ID로 전환
+        new_trace_id = f"REC-{self.session_platform.upper()}-{channel_name}-STOP"
+        token = set_trace_id(new_trace_id)
+        
+        try:
+            if not self.is_recording or not self.process:
+                logger.warning(f"[{channel_name}] 녹화 중이 아닙니다.")
+                return
 
-        logger.info(f"[{channel_name}] 프로세스 강제 완전 종료")
+            logger.info(f"[{channel_name}] 녹화 프로세스 및 자식 프로세스 트리를 강제 종료합니다.")
+            
+            def _wait_kill():
+                import psutil
+                try:
+                    # 자식 프로세스까지 추적해서 모두 kill
+                    parent = psutil.Process(self.process.pid)
+                    children = parent.children(recursive=True)
+                    for child in children:
+                        child.kill()
+                    parent.kill()
+                    parent.wait(timeout=5.0)
+                except psutil.NoSuchProcess:
+                    pass
+                except Exception as e:
+                    logger.warning(f"[{channel_name}] 프로세스 종료 중 예외: {e}")
+                
+                # 프로세스 트리 종료 후 안전장치
+                try:
+                    self.process.kill()
+                    self.process.wait()
+                except Exception:
+                    pass
+                    
+            await asyncio.to_thread(_wait_kill)
+            logger.info(f"[{channel_name}] 프로세스 강제 완전 종료 완료.")
+        finally:
+            reset_trace_id(token)

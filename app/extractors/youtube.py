@@ -67,6 +67,20 @@ class YouTubeExtractor(BaseExtractor):
         if cookie_file:
             cmd.extend(["--cookies", cookie_file])
 
+        # 유튜브 전용 또는 글로벌 프록시 적용
+        proxy_url = settings.YOUTUBE_PROXY or settings.GLOBAL_PROXY
+        if proxy_url:
+            cmd.extend(["--proxy", proxy_url])
+
+        # poToken 및 visitorData 우회 파라미터 적용
+        ext_args = []
+        if settings.YOUTUBE_PO_TOKEN:
+            ext_args.append(f"po_token={settings.YOUTUBE_PO_TOKEN}")
+        if settings.YOUTUBE_VISITOR_DATA:
+            ext_args.append(f"visitor_data={settings.YOUTUBE_VISITOR_DATA}")
+        if ext_args:
+            cmd.extend(["--extractor-args", f"youtube:{';'.join(ext_args)}"])
+
         cmd.append(url)
 
         try:
@@ -97,8 +111,41 @@ class YouTubeExtractor(BaseExtractor):
         return {}
 
     async def is_live(self) -> bool:
-        """유튜브 채널이 현재 생방송 중인지 확인합니다."""
+        """유튜브 채널이 현재 생방송 중인지 확인합니다 (초경량 HTML 파싱 선감지 적용)."""
         url = self._get_live_url()
+        
+        headers = self.headers.copy()
+        import random
+        user_agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0"
+        ]
+        headers["User-Agent"] = random.choice(user_agents)
+        headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
+        headers["Accept-Language"] = "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
+        
+        cookie_str = self.get_cookie_string()
+        if cookie_str:
+            headers["Cookie"] = cookie_str
+            
+        proxy_url = settings.YOUTUBE_PROXY or settings.GLOBAL_PROXY or None
+        
+        try:
+            # 유튜브 생방송 페이지 HTML 비동기 초경량 조회
+            html = await self._fetch_text(url, headers=headers, timeout=10, proxy=proxy_url)
+            if html:
+                # 생방송 활성화 판단 지표 검색 ("isLive":true)
+                if '"isLive":true' in html or '"isLiveLiveStream":true' in html or '\"isLive\":true' in html:
+                    logger.info(f"[YouTube] 초경량 HTML 조회 생방송 감지 성공 ({self.channel_id})")
+                    return True
+                
+                logger.debug(f"[YouTube] 초경량 HTML 조회 결과: 오프라인 ({self.channel_id})")
+                return False
+        except Exception as e:
+            logger.error(f"[YouTube] 초경량 HTML 조회 에러: {e} - yt-dlp로 폴백하여 교차 검증을 진행합니다.")
+
+        # HTML 조회 실패/예외 발생 시 기존 yt-dlp 방식으로 2차 폴백 검증
         meta = await self._run_ytdlp_json(url)
         return meta.get("is_live", False) is True
 
@@ -153,8 +200,23 @@ class YouTubeExtractor(BaseExtractor):
             "--merge-output-format", "mp4",
         ]
 
+        # 유튜브 전용 또는 글로벌 프록시 적용
+        proxy_url = settings.YOUTUBE_PROXY or settings.GLOBAL_PROXY
+        if proxy_url:
+            args.extend(["--proxy", proxy_url])
+
+        # poToken 및 visitorData 우회 파라미터 적용
+        ext_args = []
+        if settings.YOUTUBE_PO_TOKEN:
+            ext_args.append(f"po_token={settings.YOUTUBE_PO_TOKEN}")
+        if settings.YOUTUBE_VISITOR_DATA:
+            ext_args.append(f"visitor_data={settings.YOUTUBE_VISITOR_DATA}")
+        if ext_args:
+            args.extend(["--extractor-args", f"youtube:{';'.join(ext_args)}"])
+
         cookie_file = self._get_cookies_file_path()
         if cookie_file:
             args.extend(["--cookies", cookie_file])
 
         return args
+
