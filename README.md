@@ -1,31 +1,31 @@
-# Stream Recorder (다중 플랫폼 자동 녹화기)
+# Stream Recorder Bypass (다중 플랫폼 자동 우회 녹화기)
 
-치지직(Chzzk), 아프리카TV(SOOP), 트위치(Twitch), 유튜브(YouTube), 틱톡(TikTok) 라이브, 인스타그램(Instagram) 라이브 방송을 모니터링하고 자동으로 녹화하며, 유튜브 VOD 비동기 다운로드 기능을 지원하는 **엔터프라이즈급 아키텍처 웹 애플리케이션**입니다.
+치지직(Chzzk), 아프리카TV(SOOP), 트위치(Twitch), 유튜브(YouTube), 틱톡(TikTok), 킥(Kick), 인스타그램(Instagram) 라이브 방송을 모니터링하고 자동으로 녹화하며, 유튜브/치지직 VOD 비동기 다운로드 및 강력한 봇 디텍션 우회 기능을 지원하는 **엔터프라이즈급 아키텍처 웹 애플리케이션**입니다.
 
-## 📺 현재 지원 플랫폼 현황
+## 📺 현재 지원 플랫폼 현황 (Bypass Edition)
 
-| 상태 | 플랫폼 | 지원 기능 |
-| :--- | :--- | :--- |
-| **✅ 정상 작동** | **치지직(Chzzk)** | 라이브 자동 녹화 |
-| | **유튜브(YouTube)** | 동영상(VOD) 비동기 다운로드 |
-| **❌ 지원 불가/오류** | **유튜브(YouTube)** | 라이브 녹화 (미지원) |
-| | **숲(SOOP)** | 라이브 및 VOD 녹화 (로직 오류) |
-| | **틱톡(TikTok)** | 라이브 및 VOD 녹화 (접근 제한) |
-| | **킥(Kick)** | 라이브 및 VOD 녹화 (미지원) |
+| 상태 | 플랫폼 | 지원 기능 | 비고 |
+| :--- | :--- | :--- | :--- |
+| **✅ 정상 작동** | **치지직(Chzzk)** | 라이브 자동 녹화 & VOD 다운로드 | 쿠키 자동 파싱 지원 |
+| **✅ 정상 작동** | **유튜브(YouTube)** | 라이브 자동 녹화 & VOD 비동기 다운로드 | poToken/visitorData 우회 적용 |
+| **✅ 정상 작동** | **숲(SOOP)** | 라이브 및 VOD 자동 녹화 / Concat 병합 | html5/live API 및 szBroadNo 정규식 폴백 |
+| **✅ 정상 작동** | **킥(Kick)** | 라이브 자동 녹화 | Cloudflare Turnstile 봇 디텍션 curl_cffi 우회 |
+| **✅ 정상 작동** | **틱톡(TikTok)** | 라이브 자동 녹화 | 초경량 모바일 HTML 상태 분석 엔진 탑재 |
+| **✅ 정상 작동** | **인스타그램(Instagram)** | 라이브 자동 녹화 | 브라우저 쿠키 연동 지원 |
 
-> [!WARNING]
-> **플랫폼 서비스 안내**: 현재 SOOP, 틱톡 등 일부 플랫폼의 녹화 로직에 구조적 문제가 있어 원활한 녹화가 이루어지지 않을 수 있습니다. 특히 유튜브 라이브와 킥은 현재 정식 지원 범위에서 제외되어 있으니 사용 시 참고 부탁드립니다.
+> [!NOTE]
+> **Bypass Edition 특징**: 본 버전은 기존 스트림링크/yt-dlp 단일 폴링의 한계를 넘어, 각 플랫폼의 봇 탐지 및 IP 차단 정책을 실시간으로 우회하는 **초경량 하이브리드 모니터링 엔진**이 탑재되어 안전하고 부하가 매우 적습니다.
 
 ## 핵심 특징
 
-- **멀티 플랫폼 완벽 대응**: Chzzk, SOOP, Twitch, YouTube 라이브는 물론 신규 연동된 **TikTok**, **Instagram Live** 모니터링 및 녹화를 기본 지원합니다.
-- **백그라운드 VOD 다운로드**: 유튜브 VOD URL만 던지면 워커가 백그라운드에서 다운로드 후 서버에 저장해 줍니다.
+- **멀티 플랫폼 우회(Bypass)**: Cloudflare Turnstile(Kick), 모바일 웹 HTML 파싱 선검지(TikTok/YouTube Live), API 차단 대비 정적 HTML 폴백(SOOP) 등 고도화된 우회 엔진 내장.
+- **백그라운드 VOD 고속 다운로드**: 유튜브 및 치지직 VOD URL만 입력하면 분할 병렬 다운로드(DASH/aria2c) 및 구간 크롭(-ss/-t) 다운로드 지원.
 - **엔터프라이즈급 안정성**: 
-  - 과거 JSON 파일 I/O로 인한 병목 현상을 타파하고 **SQLite (+ SQLAlchemy 객체 매핑)** 기반 시스템으로 마이그레이션하여 동시성 무결성을 보장합니다.
-  - 무거운 FFmpeg 인코딩 및 다운로드 작업을 메인 서버에서 떼어내 **Celery + Redis 기반 비동기 분산 워커 큐**로 오프로딩시켰습니다.
-- **의존성 자동 관리**: FFmpeg, Streamlink, yt-dlp가 없어도 실행 시 자동으로 환경에 맞춰 최신 버전으로 다운로드/업데이트됩니다.
-- **자동 리먹싱 & 후처리 보호**: 녹화 완료 후 MP4 형식으로 자동 변환. 실패 시 원본 파일(.ts)이 안전하게 보존되며 에러 로그가 남습니다.
-- **클라우드 자동 업로드**: rclone 연동으로 녹화 완료 후 구글 드라이브 등 클라우드에 100% 자동 백업 및 용량 확보.
+  - 동시성 무결성을 확보한 **SQLite (+ SQLAlchemy 객체 매핑)** 기반 채널 저장소.
+  - 무거운 FFmpeg 인코딩 및 후처리 작업을 완벽히 분리한 **Celery + Redis 기반 비동기 분산 워커 큐**.
+- **의존성 자동 관리**: 실행 시 환경(Windows/Linux)에 맞춰 FFmpeg, Streamlink, yt-dlp를 자동 감지하여 설치 및 자가 백업 업데이트 수행.
+- **다중 비동기 로깅 컨텍스트**: Trace ID를 활용해 다중 채널이 비동기로 병렬 구동 및 후처리되는 전 과정의 로그가 꼬임 없이 완벽히 추적됩니다.
+- **클라우드 자동 업로드**: rclone 연동으로 녹화 완료 즉시 원격 구글 드라이브 등 클라우드에 자동 백업 및 디스크 용량 자동 관리.
 
 ---
 
@@ -36,9 +36,9 @@
 ### 0. Docker (공식 배포 규격)
 
 ```bash
-# 저장소 클론
-git clone https://github.com/Solotcher/stream-recorder.git
-cd stream-recorder
+# 저장소 클론 (Bypass 에디션)
+git clone https://github.com/Solotcher/stream-recorder-bypass.git
+cd stream-recorder-bypass
 
 # 백그라운드 컨테이너 빌드 및 론칭
 docker compose up -d --build
@@ -53,7 +53,7 @@ docker compose up -d --build
 
 - `OUTPUT_DIR`: 녹화 파일 저장 경로 (Docker 구동 시 수정 불필요, `docker-compose.yml` 바인드 마운트 활용 권장)
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`: 상태 알림 전송용 텔레그램 봇
-- `FILENAME_PATTERN`: 파일명 생성 규칙 (예: `{date}_{streamer}_{title}_{quality}`)
+- `FILENAME_PATTERN`: 파일명 생성 규칙 (예: `{date}_{time}_{streamer}_{title}_{quality}`)
 - `RCLONE_REMOTE`: 클라우드 연동 업로드 리모트
 - `USER_AGENT`: 모바일 & PC 크롤링 우회용 User-Agent
 
@@ -66,8 +66,10 @@ docker compose up -d --build
    - 치지직: `chzzk.naver.com/채널ID`
    - 트위치: `twitch.tv/아이디`
    - 유튜브: `youtube.com/@핸들` 또는 `youtube.com/channel/UC채널ID`
+   - 숲(SOOP): `ch.soop.st/아이디` 또는 `play.soop.st/방번호`
+   - 킥: `kick.com/채널ID`
    - 틱톡/인스타그램: 각 플랫폼 계정 ID (`@` 생략 가능)
-3. **쿠키 관리** 탭에서 인스타그램, 틱톡 등의 멤버십 방송 녹화 및 밴 우회를 위한 브라우저 우회 전용 쿠키를 입양할 수 있습니다.
+3. **쿠키 관리** 탭에서 플랫폼별 멤버십 방송 녹화 및 성인 인증을 위한 브라우저 우회 전용 쿠키를 간편하게 뭉치 복사로 등록할 수 있습니다.
 
 ---
 
@@ -77,7 +79,7 @@ docker compose up -d --build
 - **Database**: SQLite & SQLAlchemy ORM
 - **Background Queue**: Celery, Redis (비동기 인코딩 및 VOD 병합 파이프라인 전담)
 - **Frontend**: Vanilla JS (ES Modules), CSS (Glassmorphism & Interactive UI)
-- **추출 및 녹화 엔진**: Streamlink (Chzzk, Twitch, SOOP, Instagram), yt-dlp (YouTube), FFmpeg Native (TikTok)
+- **추출 및 우회 엔진**: curl_cffi (Kick Turnstile 우회), Streamlink (Chzzk, Twitch, SOOP, Instagram), yt-dlp (YouTube), Mobile HTML Web Scraping (TikTok)
 - **후처리**: FFmpeg (Remuxing / Concat)
 
 ---
@@ -89,6 +91,7 @@ docker compose up -d --build
 **사용된 AI 모델:**
 - **Claude Opus 4.6** (Anthropic) — 핵심 아키텍처 기반 설계, 백엔드/프론트엔드 전체 초기 구현, 레거시 버그 수정
 - **Gemini 3.1 Pro(High)** (Google DeepMind) — 전반적인 시스템 고도화, 신규 플랫폼(TikTok, Instagram) 확장, OCI 클라우드 및 Docker(3.14 No-GIL) 체제 이식, SQLite 및 Celery+Redis를 관통하는 차세대 아키텍처 전면 개편(Phase 1~3 완전 수행)
+- **Antigravity (Gemini 3.5 Flash (Medium))** — 4대 플랫폼(SOOP, 유튜브 라이브, 틱톡, 킥) 초경량 하이브리드 우회(Bypass) 아키텍처 및 Trace ID 로깅 코어 탑재. 프로젝트 이관 아카이빙 분리 및 신규 개발 작업 환경 구축 완료.
 
 ---
 
