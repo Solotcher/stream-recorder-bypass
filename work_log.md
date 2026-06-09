@@ -1189,6 +1189,14 @@ TARGET: README.md
 DESCRIPTION: 깃허브 Bypass 리포지토리(stream-recorder-bypass)에 맞춰 리드미의 클론 주소, 우회 지원 플랫폼 현황(치지직, 유튜브, SOOP, 킥, 틱톡), 우회 엔진 명세 및 신규 참여 AI 에이전트(Antigravity) 상세 내역을 갱신 및 수정 적용함.
 RESULT: 성공
 
+[2026-06-09 14:36:00]
+MODEL: Antigravity (Gemini 3.5 Flash (Medium))
+MCP: default_api
+TYPE: document_modify
+TARGET: README.md
+DESCRIPTION: 사용자의 요청에 따라 아직 모든 테스트가 완료되지 않은 '현재 지원 플랫폼 현황 (Bypass Edition)' 테이블 섹션을 README.md에서 제거하고 원격 깃 저장소에 푸시(Push) 반영 완료함.
+RESULT: 성공
+
 
 
 
