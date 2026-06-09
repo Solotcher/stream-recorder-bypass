@@ -2,20 +2,6 @@
 
 치지직(Chzzk), 아프리카TV(SOOP), 트위치(Twitch), 유튜브(YouTube), 틱톡(TikTok), 킥(Kick), 인스타그램(Instagram) 라이브 방송을 모니터링하고 자동으로 녹화하며, 유튜브/치지직 VOD 비동기 다운로드 및 강력한 봇 디텍션 우회 기능을 지원하는 **엔터프라이즈급 아키텍처 웹 애플리케이션**입니다.
 
-## 📺 현재 지원 플랫폼 현황 (Bypass Edition)
-
-| 상태 | 플랫폼 | 지원 기능 | 비고 |
-| :--- | :--- | :--- | :--- |
-| **✅ 정상 작동** | **치지직(Chzzk)** | 라이브 자동 녹화 & VOD 다운로드 | 쿠키 자동 파싱 지원 |
-| **✅ 정상 작동** | **유튜브(YouTube)** | 라이브 자동 녹화 & VOD 비동기 다운로드 | poToken/visitorData 우회 적용 |
-| **✅ 정상 작동** | **숲(SOOP)** | 라이브 및 VOD 자동 녹화 / Concat 병합 | html5/live API 및 szBroadNo 정규식 폴백 |
-| **✅ 정상 작동** | **킥(Kick)** | 라이브 자동 녹화 | Cloudflare Turnstile 봇 디텍션 curl_cffi 우회 |
-| **✅ 정상 작동** | **틱톡(TikTok)** | 라이브 자동 녹화 | 초경량 모바일 HTML 상태 분석 엔진 탑재 |
-| **✅ 정상 작동** | **인스타그램(Instagram)** | 라이브 자동 녹화 | 브라우저 쿠키 연동 지원 |
-
-> [!NOTE]
-> **Bypass Edition 특징**: 본 버전은 기존 스트림링크/yt-dlp 단일 폴링의 한계를 넘어, 각 플랫폼의 봇 탐지 및 IP 차단 정책을 실시간으로 우회하는 **초경량 하이브리드 모니터링 엔진**이 탑재되어 안전하고 부하가 매우 적습니다.
-
 ## 핵심 특징
 
 - **멀티 플랫폼 우회(Bypass)**: Cloudflare Turnstile(Kick), 모바일 웹 HTML 파싱 선검지(TikTok/YouTube Live), API 차단 대비 정적 HTML 폴백(SOOP) 등 고도화된 우회 엔진 내장.
@@ -43,7 +29,7 @@ cd stream-recorder-bypass
 # 백그라운드 컨테이너 빌드 및 론칭
 docker compose up -d --build
 ```
-*위 명령어 한 줄로 **Python 3.14 (Free-threaded/No-GIL)** 기반의 메인 서버 컨테이너, **Redis** 메시지 브로커 컨테이너, 그리고 인코딩 전담 **Celery 워커** 컨테이너가 일괄 구축되며 하드웨어의 병렬 성능이 100% 해제됩니다.* 녹화된 결과물은 호스트 PC의 `./output` 에 영구 저장됩니다.
+*위 명령어 한 줄로 **Python 3.14 (Free-threaded/No-GIL)** 기반의 메인 서버 컨테이너, **Redis** 메시지 브로커 컨테이너, 그리고 인코딩 전담 **Celery 워커** 컨테이너가 일괄 구축되며 하드웨어의 병렬 성능이 100% 해제됩니다.* 녹화된 결과물은 호스트 PC of `./output` 에 영구 저장됩니다.
 
 ---
 
